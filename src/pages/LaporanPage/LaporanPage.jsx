@@ -321,8 +321,8 @@ function mapStatementRows(report) {
     { type: 'item', label: '1.3 - Net Cashflow', value: formatCurrency(report?.netCashflow) },
 
     { type: 'section', label: '2 - Ringkasan Simpanan dan Pinjaman', value: '' },
-    { type: 'item', label: '2.1 - Total Simpanan', value: formatCurrency(report?.totalSimpanan) },
-    { type: 'item', label: '2.2 - Total Pinjaman', value: formatCurrency(report?.totalPinjaman) },
+    { type: 'item', label: '2.1 - Total Setoran', value: formatCurrency(report?.totalSimpanan) },
+    { type: 'item', label: '2.2 - Total Pencairan', value: formatCurrency(report?.totalPinjaman) },
     { type: 'item', label: '2.3 - Total Angsuran', value: formatCurrency(report?.totalAngsuran) },
     { type: 'item', label: '2.4 - Total Penarikan', value: formatCurrency(report?.totalPenarikan) },
 

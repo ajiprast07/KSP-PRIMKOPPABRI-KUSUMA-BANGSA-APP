@@ -1415,9 +1415,10 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [previewDokumen, setPreviewDokumen] = useState(null)
-  const [memberTransactions, setMemberTransactions] = useState([])
-  const [transactionsLoading, setTransactionsLoading] = useState(false)
-  const [transactionsError, setTransactionsError] = useState('')
+  const [memberSavings, setMemberSavings] = useState([])
+  const [memberLoans, setMemberLoans] = useState([])
+  const [financeLoading, setFinanceLoading] = useState(false)
+  const [financeError, setFinanceError] = useState('')
 
   const formatDate = (value, withTime = false) => {
     if (!value) return '-'
@@ -1436,50 +1437,63 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num)
   }
 
-  const formatMethod = (value) => {
-    const normalized = String(value || '').toUpperCase()
-    if (normalized === 'CASH' || normalized === 'TUNAI') return 'Tunai'
-    if (normalized === 'TRANSFER') return 'Transfer'
-    return normalized || '-'
-  }
-
-  const fetchMemberTransactions = useCallback(async (nasabahId) => {
+  const fetchMemberFinanceData = useCallback(async (nasabahId) => {
     if (!nasabahId) {
-      setMemberTransactions([])
+      setMemberSavings([])
+      setMemberLoans([])
       return
     }
 
-    setTransactionsLoading(true)
-    setTransactionsError('')
+    setFinanceLoading(true)
+    setFinanceError('')
 
     try {
-      const collected = []
+      const simpananRes = await authFetch(`/api/simpanan/nasabah/${nasabahId}`)
+      const simpananJson = await simpananRes.json().catch(() => null)
+      if (!simpananRes.ok) throw new Error(simpananJson?.message || 'Gagal mengambil data simpanan anggota')
+
+      const simpananRows = toArray(simpananJson?.data ?? simpananJson)
+      const simpananTarget = { SUKARELA: 0, WAJIB: 0, POKOK: 0 }
+
+      simpananRows.forEach((item) => {
+        const jenis = String(item?.jenisSimpanan || '').toUpperCase()
+        if (!(jenis in simpananTarget)) return
+        const nominal = Number(item?.saldoBerjalan ?? item?.saldo ?? item?.nominal ?? 0)
+        simpananTarget[jenis] += Number.isFinite(nominal) ? nominal : 0
+      })
+
+      setMemberSavings([
+        { key: 'SUKARELA', label: 'SUKARELA', nominal: simpananTarget.SUKARELA },
+        { key: 'WAJIB', label: 'WAJIB', nominal: simpananTarget.WAJIB },
+        { key: 'POKOK', label: 'POKOK', nominal: simpananTarget.POKOK },
+      ])
+
+      const collectedLoans = []
       const visitedCursor = new Set()
       let cursor = null
       let guard = 0
 
       while (guard < 200) {
-        const params = new URLSearchParams({ limit: '20' })
+        const params = new URLSearchParams()
         if (cursor !== null && cursor !== undefined && cursor !== '') {
           params.set('cursor', String(cursor))
         }
 
         const query = params.toString()
         const endpoint = query
-          ? `/api/transaksi/nasabah/${nasabahId}?${query}`
-          : `/api/transaksi/nasabah/${nasabahId}`
+          ? `/api/pinjaman/nasabah/${nasabahId}?${query}`
+          : `/api/pinjaman/nasabah/${nasabahId}`
 
-        const res = await authFetch(endpoint)
-        const json = await res.json().catch(() => null)
-        if (!res.ok) throw new Error(json?.message || 'Gagal mengambil data transaksi anggota')
+        const loanRes = await authFetch(endpoint)
+        const loanJson = await loanRes.json().catch(() => null)
+        if (!loanRes.ok) throw new Error(loanJson?.message || 'Gagal mengambil data pinjaman anggota')
 
-        const rows = toArray(json?.data ?? json)
-        collected.push(...rows)
+        const rows = toArray(loanJson?.data ?? loanJson)
+        collectedLoans.push(...rows)
 
-        const pg = json?.pagination ?? {}
+        const pg = loanJson?.pagination ?? {}
         const hasNext = Boolean(pg?.hasNext ?? pg?.has_next)
         const nextCursor = pg?.nextCursor ?? pg?.next_cursor
-
         if (!hasNext || nextCursor === null || nextCursor === undefined || nextCursor === '') {
           break
         }
@@ -1492,14 +1506,16 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
         guard += 1
       }
 
-      const uniqueById = Array.from(new Map(collected.map((item) => [item?.id, item])).values())
-      uniqueById.sort((a, b) => new Date(b?.tanggal || 0).getTime() - new Date(a?.tanggal || 0).getTime())
-      setMemberTransactions(uniqueById)
+      const filteredLoans = Array.from(new Map(collectedLoans.map((loan) => [loan?.id, loan])).values())
+        .sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))
+
+      setMemberLoans(filteredLoans)
     } catch (err) {
-      setTransactionsError(err.message || 'Terjadi kesalahan saat mengambil riwayat transaksi anggota')
-      setMemberTransactions([])
+      setFinanceError(err.message || 'Terjadi kesalahan saat mengambil data simpanan dan pinjaman anggota')
+      setMemberSavings([])
+      setMemberLoans([])
     } finally {
-      setTransactionsLoading(false)
+      setFinanceLoading(false)
     }
   }, [authFetch])
 
@@ -1512,15 +1528,16 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
       const json = await res.json().catch(() => null)
       if (!res.ok) throw new Error(json?.message || 'Gagal mengambil detail anggota')
       setDetail(json?.data ?? null)
-      await fetchMemberTransactions(memberId)
+      await fetchMemberFinanceData(memberId)
     } catch (err) {
       setError(err.message || 'Terjadi kesalahan saat mengambil detail anggota')
       setDetail(null)
-      setMemberTransactions([])
+      setMemberSavings([])
+      setMemberLoans([])
     } finally {
       setLoading(false)
     }
-  }, [authFetch, fetchMemberTransactions, memberId])
+  }, [authFetch, fetchMemberFinanceData, memberId])
 
   useEffect(() => {
     if (!open) return
@@ -1533,9 +1550,10 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
       setError('')
       setLoading(false)
       setPreviewDokumen(null)
-      setMemberTransactions([])
-      setTransactionsError('')
-      setTransactionsLoading(false)
+      setMemberSavings([])
+      setMemberLoans([])
+      setFinanceError('')
+      setFinanceLoading(false)
     }
   }, [open])
 
@@ -1543,14 +1561,6 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
 
   const statusConfig = getStatus(String(detail?.status ?? 'PENDING').toUpperCase())
   const dokumenList = sortDokumenByPriority(Array.isArray(detail?.dokumen) ? detail.dokumen : [])
-  const simpananTransactions = memberTransactions.filter((tx) => String(tx?.jenisTransaksi || '').toUpperCase() === 'SETORAN')
-  const penarikanTransactions = memberTransactions.filter((tx) => String(tx?.jenisTransaksi || '').toUpperCase() === 'PENARIKAN')
-  const pinjamanTransactions = memberTransactions.filter((tx) => {
-    const type = String(tx?.jenisTransaksi || '').toUpperCase()
-    return type === 'PINJAMAN' || type === 'PENCAIRAN'
-  })
-  const angsuranTransactions = memberTransactions.filter((tx) => String(tx?.jenisTransaksi || '').toUpperCase() === 'ANGSURAN')
-
   return createPortal(
     <div
       className="fixed inset-0 z-[9998] bg-black/50 flex items-end sm:items-center justify-center sm:p-4"
@@ -1689,57 +1699,54 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
               </div>
 
               <div className="rounded-xl border border-gray-100 p-4 space-y-4">
-                <h4 className="text-sm font-semibold text-gray-900">Riwayat Transaksi Anggota</h4>
+                <h4 className="text-sm font-semibold text-gray-900">Data Simpanan dan Pinjaman</h4>
 
-                {transactionsLoading ? (
+                {financeLoading ? (
                   <div className="py-6 flex items-center justify-center gap-2 text-gray-400 text-sm">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Memuat riwayat transaksi...</span>
+                    <span>Memuat data simpanan dan pinjaman...</span>
                   </div>
-                ) : transactionsError ? (
+                ) : financeError ? (
                   <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                    {transactionsError}
+                    {financeError}
                   </div>
-                ) : memberTransactions.length === 0 ? (
-                  <p className="text-sm text-gray-500">Belum ada riwayat transaksi.</p>
                 ) : (
-                  <div className="space-y-4">
-                    {[
-                      { key: 'simpanan', title: 'Data Simpanan', rows: simpananTransactions, extraLabel: 'ID Rekening', extraKey: 'rekeningSimpananId' },
-                      { key: 'penarikan', title: 'Data Penarikan', rows: penarikanTransactions, extraLabel: 'ID Rekening', extraKey: 'rekeningSimpananId' },
-                      { key: 'pinjaman', title: 'Data Pinjaman', rows: pinjamanTransactions, extraLabel: 'ID Pinjaman', extraKey: 'pinjamanId' },
-                      { key: 'angsuran', title: 'Data Angsuran', rows: angsuranTransactions, extraLabel: 'ID Pinjaman', extraKey: 'pinjamanId' },
-                    ].map((section) => (
-                      <div key={section.key} className="rounded-lg border border-gray-100 p-3 space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <h5 className="text-sm font-semibold text-gray-900">{section.title}</h5>
-                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                            {section.rows.length} transaksi
-                          </span>
-                        </div>
-
-                        {section.rows.length === 0 ? (
-                          <p className="text-xs text-gray-500">Tidak ada data {section.title.toLowerCase()}.</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {section.rows.map((tx) => (
-                              <div key={tx.id} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs sm:text-sm">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0 space-y-1">
-                                    <p className="font-semibold text-gray-800">Transaksi #{tx?.id ?? '-'}</p>
-                                    <p className="text-gray-600">Tanggal: {formatDate(tx?.tanggal, true)}</p>
-                                    <p className="text-gray-600">Nominal: {formatCurrency(tx?.nominal)}</p>
-                                    <p className="text-gray-600">Metode: {formatMethod(tx?.metodePembayaran)}</p>
-                                    <p className="text-gray-600">{section.extraLabel}: {tx?.[section.extraKey] ?? '-'}</p>
-                                    <p className="text-gray-600">Catatan: {tx?.catatan || '-'}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-gray-100 p-3 space-y-3">
+                      <h5 className="text-sm font-semibold text-gray-900">Data Simpanan</h5>
+                      <div className="space-y-2 text-sm">
+                        {memberSavings.map((item) => (
+                          <div key={item.key} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2">
+                            <span className="font-medium text-gray-700">{item.label}</span>
+                            <span className="font-semibold text-gray-900">{formatCurrency(item.nominal)}</span>
                           </div>
-                        )}
+                        ))}
                       </div>
-                    ))}
+                    </div>
+
+                    <div className="rounded-lg border border-gray-100 p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h5 className="text-sm font-semibold text-gray-900">Data Pinjaman</h5>
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                          {memberLoans.length} pinjaman
+                        </span>
+                      </div>
+
+                      {memberLoans.length === 0 ? (
+                        <p className="text-xs text-gray-500">Belum ada data pinjaman.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {memberLoans.map((loan, index) => (
+                            <div key={loan?.id} className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs sm:text-sm">
+                              <p className="font-semibold text-gray-800">Pinjaman ke-{memberLoans.length - index}</p>
+                              <p className="text-gray-600">Jumlah Pinjaman: {formatCurrency(loan?.jumlahPinjaman)}</p>
+                              <p className="text-gray-600">Total Pengembalian: {formatCurrency(loan?.totalPengembalian)}</p>
+                              <p className="text-gray-600">Sisa: {formatCurrency(loan?.sisaPinjaman)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

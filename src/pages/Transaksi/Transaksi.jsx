@@ -10,9 +10,9 @@ const INCOMING_TYPES = new Set(['SETORAN', 'ANGSURAN'])
 const OUTGOING_TYPES = new Set(['PENARIKAN', 'PINJAMAN'])
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'ALL', label: 'Semua Jenis' },
-  { value: 'SETORAN', label: 'Simpanan' },
+  { value: 'SETORAN', label: 'Setoran' },
   { value: 'PENARIKAN', label: 'Penarikan' },
-  { value: 'PINJAMAN', label: 'Pinjaman' },
+  { value: 'PINJAMAN', label: 'Pencairan' },
   { value: 'ANGSURAN', label: 'Angsuran' },
 ]
 const PAYMENT_METHOD_OPTIONS = [
@@ -134,10 +134,10 @@ function normalizeTransactionType(type) {
 
 function mapTypeLabel(type) {
   const normalized = normalizeTransactionType(type)
-  if (normalized === 'SETORAN') return 'Simpanan'
+  if (normalized === 'SETORAN') return 'Setoran'
   if (normalized === 'ANGSURAN') return 'Angsuran'
   if (normalized === 'PENARIKAN') return 'Penarikan'
-  if (normalized === 'PINJAMAN') return 'Pinjaman'
+  if (normalized === 'PINJAMAN') return 'Pencairan'
   return normalized || '-'
 }
 
@@ -194,10 +194,9 @@ function computeSummary(transactions) {
       const txType = normalizeTransactionType(tx?.jenisTransaksi)
       if (INCOMING_TYPES.has(txType)) acc.incoming += safeNominal
       else if (OUTGOING_TYPES.has(txType)) acc.outgoing += safeNominal
-      else acc.other += 1
       return acc
     },
-    { incoming: 0, outgoing: 0, other: 0 }
+    { incoming: 0, outgoing: 0 }
   )
 }
 
@@ -266,6 +265,7 @@ export default function Transaksi({ onNavigate }) {
   const [pageIndex, setPageIndex] = useState(1)
   const [hasNextPage, setHasNextPage] = useState(false)
   const [actionMenuOpenId, setActionMenuOpenId] = useState('')
+  const [pendingVerificationCount, setPendingVerificationCount] = useState(0)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
@@ -296,14 +296,26 @@ function isApprovedLoanStatus(status) {
 }
 
 function toNasabahOption(item) {
+  const statusCandidates = [
+    item?.status,
+    item?.statusKeanggotaan,
+    item?.memberStatus,
+    item?.keanggotaan,
+  ]
+  const normalizedStatus = statusCandidates
+    .map((value) => String(value || '').toUpperCase())
+    .find((value) => value) || ''
+
   return {
     id: Number(item?.id),
     name: String(item?.nama || item?.namaLengkap || item?.fullName || `Anggota #${item?.id}`),
+    status: normalizedStatus,
+    isActive: normalizedStatus === 'AKTIF' || normalizedStatus === 'ACTIVE',
   }
 }
   // ─── add menu ─────────────────────────────────────────────────────────────
   const [addMenuOpen, setAddMenuOpen] = useState(false)
-  const [activeMenuItem, setActiveMenuItem] = useState('Simpanan')
+  const [activeMenuItem, setActiveMenuItem] = useState('Setoran')
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false)
   const [loanNasabahId, setLoanNasabahId] = useState('')
   const [loanAmount, setLoanAmount] = useState('')
@@ -316,6 +328,7 @@ function toNasabahOption(item) {
 
   const [isInstallmentModalOpen, setIsInstallmentModalOpen] = useState(false)
   const [installmentPinjamanId, setInstallmentPinjamanId] = useState('')
+  const [installmentNasabahId, setInstallmentNasabahId] = useState('')
   const [installmentAmount, setInstallmentAmount] = useState('')
   const [installmentNote, setInstallmentNote] = useState('')
   const [installmentMethod, setInstallmentMethod] = useState('CASH')
@@ -324,6 +337,7 @@ function toNasabahOption(item) {
   const [installmentError, setInstallmentError] = useState('')
   const [installmentSuccess, setInstallmentSuccess] = useState('')
   const [installmentLoanOptions, setInstallmentLoanOptions] = useState([])
+  const [installmentNasabahOptions, setInstallmentNasabahOptions] = useState([])
 
   const [isSavingsModalOpen, setIsSavingsModalOpen] = useState(false)
   const [savingsNasabahId, setSavingsNasabahId] = useState('')
@@ -356,7 +370,7 @@ function toNasabahOption(item) {
   const addMenuRef = useRef(null)
   const lookupCacheRef = useRef(null)
 
-  const addMenuItems = useMemo(() => ['Simpanan', 'Penarikan', 'Pinjaman', 'Angsuran'], [])
+  const addMenuItems = useMemo(() => ['Setoran', 'Penarikan', 'Pencairan', 'Angsuran'], [])
   const displayedNasabahOptions = useMemo(() => {
     const keyword = loanNasabahSearch.trim().toLowerCase()
 
@@ -368,22 +382,30 @@ function toNasabahOption(item) {
     return sorted.filter((item) => item.name.toLowerCase().includes(keyword))
   }, [activeNasabahOptions, loanNasabahSearch])
 
-  const displayedInstallmentLoanOptions = useMemo(() => {
+  const displayedInstallmentNasabahOptions = useMemo(() => {
     const keyword = installmentLoanSearch.trim().toLowerCase()
 
-    const sorted = [...installmentLoanOptions].sort((a, b) => {
-      const byName = String(a.nasabahName || '').localeCompare(String(b.nasabahName || ''), 'id', {
-        sensitivity: 'base',
-      })
-      if (byName !== 0) return byName
-      return Number(b.id) - Number(a.id)
-    })
+    const sorted = [...installmentNasabahOptions].sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), 'id', { sensitivity: 'base' })
+    )
 
     if (!keyword) return sorted
-    return sorted.filter((item) =>
-      `${item.id} ${item.nasabahName}`.toLowerCase().includes(keyword)
-    )
-  }, [installmentLoanOptions, installmentLoanSearch])
+    return sorted.filter((item) => item.name.toLowerCase().includes(keyword))
+  }, [installmentNasabahOptions, installmentLoanSearch])
+
+  const displayedInstallmentLoanOptions = useMemo(() => {
+    if (!installmentNasabahId) return []
+
+    const selectedMemberLoans = installmentLoanOptions
+      .filter((item) => String(item.nasabahId) === String(installmentNasabahId))
+      .sort((a, b) => Number(b.id) - Number(a.id))
+
+    return selectedMemberLoans.map((item, index) => ({
+      ...item,
+      installmentOrder: selectedMemberLoans.length - index,
+      label: `Pinjaman ke-${selectedMemberLoans.length - index}`,
+    }))
+  }, [installmentLoanOptions, installmentNasabahId])
 
   const displayedSavingsNasabahOptions = useMemo(() => {
     const keyword = savingsNasabahSearch.trim().toLowerCase()
@@ -413,6 +435,11 @@ function toNasabahOption(item) {
   const selectedWithdrawalRekening = useMemo(
     () => withdrawalRekeningOptions.find((item) => String(item.id) === withdrawalRekeningId) || null,
     [withdrawalRekeningOptions, withdrawalRekeningId]
+  )
+
+  const selectedWithdrawalNasabah = useMemo(
+    () => withdrawalNasabahOptions.find((item) => String(item.id) === withdrawalNasabahId) || null,
+    [withdrawalNasabahOptions, withdrawalNasabahId]
   )
 
   const selectedInstallmentLoan = useMemo(
@@ -462,6 +489,52 @@ function toNasabahOption(item) {
   useEffect(() => {
     lookupCacheRef.current = null
   }, [dataVersion])
+
+  const fetchPendingVerificationCount = useCallback(async () => {
+    try {
+      let pendingCount = 0
+      const visitedCursor = new Set()
+      let after = null
+      let guard = 0
+
+      while (guard < 200) {
+        const params = new URLSearchParams({ status: 'PENDING' })
+        if (after !== null && after !== undefined && after !== '') {
+          params.set('after', String(after))
+        }
+
+        const query = params.toString()
+        const endpoint = query ? `/api/pinjaman?${query}` : '/api/pinjaman'
+
+        const res = await authFetch(endpoint)
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(json?.message || 'Gagal mengambil data pinjaman')
+        }
+
+        const rows = toArray(json?.data ?? json)
+  pendingCount += rows.filter((loan) => String(loan?.status || '').toUpperCase() === 'PENDING').length
+
+        const pg = json?.pagination ?? {}
+        const hasNext = Boolean(pg?.hasNext ?? pg?.has_next)
+        const nextCursor = pg?.nextCursor ?? pg?.next_cursor
+        if (!hasNext || nextCursor === null || nextCursor === undefined || nextCursor === '') {
+          break
+        }
+        if (visitedCursor.has(String(nextCursor))) {
+          break
+        }
+
+        visitedCursor.add(String(nextCursor))
+        after = nextCursor
+        guard += 1
+      }
+
+      setPendingVerificationCount(pendingCount)
+    } catch {
+      setPendingVerificationCount(0)
+    }
+  }, [authFetch])
 
   const fetchTransactionsPage = useCallback(async () => {
     setLoading(true)
@@ -554,6 +627,10 @@ function toNasabahOption(item) {
     fetchTransactionsPage()
   }, [fetchTransactionsPage, dataVersion])
 
+  useEffect(() => {
+    fetchPendingVerificationCount()
+  }, [fetchPendingVerificationCount, dataVersion])
+
   // ─────────────────────────────────────────────────────────────────────────
   // Add-menu outside-click handler
   // ─────────────────────────────────────────────────────────────────────────
@@ -586,6 +663,8 @@ function toNasabahOption(item) {
 
   const closeInstallmentModal = useCallback(() => {
     setIsInstallmentModalOpen(false)
+    setInstallmentNasabahId('')
+    setInstallmentPinjamanId('')
     setInstallmentError('')
   }, [])
 
@@ -723,6 +802,7 @@ function toNasabahOption(item) {
     setInstallmentError('')
     setInstallmentSuccess('')
     setInstallmentSubmitting(false)
+    setInstallmentNasabahId('')
     setInstallmentPinjamanId('')
     setInstallmentAmount('')
     setInstallmentNote('')
@@ -748,14 +828,13 @@ function toNasabahOption(item) {
       const nasabahRows = toArray(nasabahJson?.data ?? nasabahJson)
       const pinjamanRows = toArray(pinjamanJson?.data ?? pinjamanJson)
 
-      const activeNasabahMap = new Map(
+      const nasabahMap = new Map(
         nasabahRows
           .filter((item) => item?.id !== undefined && item?.id !== null)
-          .filter((item) => isActiveNasabah(item))
           .map((item) => [String(item.id), toNasabahOption(item)])
       )
-      const activeNasabahNameMap = new Map(
-        Array.from(activeNasabahMap.values()).map((item) => [String(item.name || '').trim().toLowerCase(), item])
+      const nasabahNameMap = new Map(
+        Array.from(nasabahMap.values()).map((item) => [String(item.name || '').trim().toLowerCase(), item])
       )
 
       const loans = pinjamanRows.reduce((acc, loan) => {
@@ -765,9 +844,9 @@ function toNasabahOption(item) {
         if (!isApprovedLoanStatus(loan?.status)) return acc
 
         const nasabahNameFromLoan = String(loan?.nasabah?.nama || '').trim()
-        const nasabahById = nasabahId !== undefined && nasabahId !== null ? activeNasabahMap.get(String(nasabahId)) : null
+        const nasabahById = nasabahId !== undefined && nasabahId !== null ? nasabahMap.get(String(nasabahId)) : null
         const nasabahByName = nasabahNameFromLoan
-          ? activeNasabahNameMap.get(nasabahNameFromLoan.toLowerCase())
+          ? nasabahNameMap.get(nasabahNameFromLoan.toLowerCase())
           : null
         const nasabah = nasabahById || nasabahByName
 
@@ -777,17 +856,28 @@ function toNasabahOption(item) {
           id: Number(loanId),
           nasabahId: Number(nasabah?.id || nasabahId || 0),
           nasabahName: nasabah.name,
+          jumlahPinjaman: Number(loan?.jumlahPinjaman ?? 0),
           sisaPinjaman: Number(loan?.sisaPinjaman ?? 0),
-          label: `${nasabah.name}`,
         })
         return acc
       }, [])
 
+      const nasabahWithLoans = Array.from(
+        new Map(
+          loans.map((item) => [
+            String(item.nasabahId),
+            { id: item.nasabahId, name: item.nasabahName },
+          ])
+        ).values()
+      )
+
       setInstallmentLoanOptions(loans)
+      setInstallmentNasabahOptions(nasabahWithLoans)
       setIsInstallmentModalOpen(true)
     } catch (err) {
       setInstallmentError(err?.message || 'Terjadi kesalahan saat memuat data angsuran')
       setInstallmentLoanOptions([])
+      setInstallmentNasabahOptions([])
       setIsInstallmentModalOpen(true)
     }
   }, [authFetch])
@@ -846,15 +936,31 @@ function toNasabahOption(item) {
       }
 
       const rows = toArray(json?.data ?? json)
-      const options = rows
+      const nasabahList = rows
         .filter((item) => item?.id !== undefined && item?.id !== null)
-        .filter((item) => !isActiveNasabah(item))
         .map((item) => toNasabahOption(item))
+
+      const checks = await Promise.all(
+        nasabahList.map(async (nasabah) => {
+          try {
+            const rekeningRes = await authFetch(`/api/simpanan/nasabah/${nasabah.id}`)
+            const rekeningJson = await rekeningRes.json().catch(() => null)
+            if (!rekeningRes.ok) return null
+
+            const rekeningRows = toArray(rekeningJson?.data ?? rekeningJson)
+            return rekeningRows.length > 0 ? nasabah : null
+          } catch {
+            return null
+          }
+        })
+      )
+
+      const options = checks.filter(Boolean)
 
       setWithdrawalNasabahOptions(options)
       setIsWithdrawalModalOpen(true)
     } catch (err) {
-      setWithdrawalError(err?.message || 'Terjadi kesalahan saat memuat nasabah tidak aktif')
+      setWithdrawalError(err?.message || 'Terjadi kesalahan saat memuat anggota dengan simpanan')
       setWithdrawalNasabahOptions([])
       setIsWithdrawalModalOpen(true)
     }
@@ -864,11 +970,11 @@ function toNasabahOption(item) {
     setActiveMenuItem(item)
     setAddMenuOpen(false)
 
-    if (item === 'Simpanan') {
+    if (item === 'Setoran') {
       openSavingsModal()
       return
     }
-    if (item === 'Pinjaman') {
+    if (item === 'Pencairan') {
       openLoanModal()
       return
     }
@@ -891,7 +997,7 @@ function toNasabahOption(item) {
       return
     }
     if (!Number.isFinite(jumlahPinjaman) || jumlahPinjaman <= 0) {
-      setLoanError('Jumlah pinjaman harus lebih besar dari 0.')
+      setLoanError('Jumlah pencairan harus lebih besar dari 0.')
       return
     }
     if (!Number.isInteger(tenorBulan) || tenorBulan < 1 || tenorBulan > 12) {
@@ -910,25 +1016,26 @@ function toNasabahOption(item) {
       })
       const json = await res.json().catch(() => null)
       if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menambahkan pinjaman')
+        throw new Error(json?.message || 'Gagal menambahkan pencairan')
       }
 
-      setLoanSuccess(json?.message || 'Pengajuan pinjaman berhasil dibuat')
+      setLoanSuccess(json?.message || 'Pengajuan pencairan berhasil dibuat')
       setIsLoanModalOpen(false)
       await fetchTransactionsPage()
+      await fetchPendingVerificationCount()
     } catch (err) {
-      setLoanError(err?.message || 'Terjadi kesalahan saat membuat pinjaman')
+      setLoanError(err?.message || 'Terjadi kesalahan saat membuat pencairan')
     } finally {
       setLoanSubmitting(false)
     }
-  }, [authFetch, loanNasabahId, loanAmount, loanTenor, fetchTransactionsPage])
+  }, [authFetch, loanNasabahId, loanAmount, loanTenor, fetchTransactionsPage, fetchPendingVerificationCount])
 
   const submitInstallment = useCallback(async () => {
     const pinjamanId = Number(installmentPinjamanId)
     const nominal = Number(installmentAmount)
 
     if (!Number.isInteger(pinjamanId) || pinjamanId <= 0) {
-      setInstallmentError('Pilih pinjaman terlebih dahulu.')
+      setInstallmentError('Pilih pencairan terlebih dahulu.')
       return
     }
     if (!Number.isFinite(nominal) || nominal <= 0) {
@@ -988,7 +1095,7 @@ function toNasabahOption(item) {
         const res = await authFetch(`/api/simpanan/nasabah/${savingsNasabahId}`)
         const json = await res.json().catch(() => null)
         if (!res.ok) {
-          throw new Error(json?.message || 'Gagal mengambil rekening simpanan nasabah')
+          throw new Error(json?.message || 'Gagal mengambil rekening setoran anggota')
         }
 
         const rows = toArray(json?.data ?? json)
@@ -1008,7 +1115,7 @@ function toNasabahOption(item) {
         setSavingsRekeningId(options.length > 0 ? String(options[0].id) : '')
       } catch (err) {
         if (isCancelled) return
-        setSavingsError(err?.message || 'Terjadi kesalahan saat mengambil rekening simpanan')
+        setSavingsError(err?.message || 'Terjadi kesalahan saat mengambil rekening setoran')
         setSavingsRekeningOptions([])
         setSavingsRekeningId('')
       } finally {
@@ -1028,7 +1135,7 @@ function toNasabahOption(item) {
     const nominal = Number(savingsAmount)
 
     if (!Number.isInteger(rekeningId) || rekeningId <= 0) {
-      setSavingsError('Pilih rekening simpanan terlebih dahulu.')
+      setSavingsError('Pilih rekening setoran terlebih dahulu.')
       return
     }
     if (!Number.isFinite(nominal) || nominal <= 0) {
@@ -1051,14 +1158,14 @@ function toNasabahOption(item) {
       })
       const json = await res.json().catch(() => null)
       if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menambahkan setoran simpanan')
+        throw new Error(json?.message || 'Gagal menambahkan setoran')
       }
 
       setSavingsSuccess(json?.message || 'Transaksi berhasil diproses')
       setIsSavingsModalOpen(false)
       await fetchTransactionsPage()
     } catch (err) {
-      setSavingsError(err?.message || 'Terjadi kesalahan saat membuat setoran simpanan')
+      setSavingsError(err?.message || 'Terjadi kesalahan saat membuat setoran')
     } finally {
       setSavingsSubmitting(false)
     }
@@ -1081,7 +1188,7 @@ function toNasabahOption(item) {
         const res = await authFetch(`/api/simpanan/nasabah/${withdrawalNasabahId}`)
         const json = await res.json().catch(() => null)
         if (!res.ok) {
-          throw new Error(json?.message || 'Gagal mengambil rekening simpanan nasabah')
+          throw new Error(json?.message || 'Gagal mengambil rekening setoran anggota')
         }
 
         const rows = toArray(json?.data ?? json)
@@ -1093,15 +1200,23 @@ function toNasabahOption(item) {
             saldoBerjalan: Number(item?.saldoBerjalan ?? 0),
             label: `${String(item?.jenisSimpanan || '-')}`,
           }))
+          .filter((item) => {
+            if (!selectedWithdrawalNasabah?.isActive) return true
+            const jenis = String(item?.jenisSimpanan || '').toUpperCase()
+            return jenis === 'SUKARELA'
+          })
           .sort((a, b) => Number(b.id) - Number(a.id))
 
         if (isCancelled) return
 
         setWithdrawalRekeningOptions(options)
         setWithdrawalRekeningId(options.length > 0 ? String(options[0].id) : '')
+        if (selectedWithdrawalNasabah?.isActive && options.length === 0) {
+          setWithdrawalError('Untuk anggota aktif, penarikan hanya bisa dari simpanan sukarela.')
+        }
       } catch (err) {
         if (isCancelled) return
-        setWithdrawalError(err?.message || 'Terjadi kesalahan saat mengambil rekening simpanan')
+        setWithdrawalError(err?.message || 'Terjadi kesalahan saat mengambil rekening setoran')
         setWithdrawalRekeningOptions([])
         setWithdrawalRekeningId('')
       } finally {
@@ -1114,14 +1229,20 @@ function toNasabahOption(item) {
     return () => {
       isCancelled = true
     }
-  }, [authFetch, isWithdrawalModalOpen, withdrawalNasabahId])
+  }, [authFetch, isWithdrawalModalOpen, withdrawalNasabahId, selectedWithdrawalNasabah?.isActive])
 
   const submitWithdrawal = useCallback(async () => {
     const rekeningId = Number(withdrawalRekeningId)
     const nominal = Number(withdrawalAmount)
+    const selectedJenis = String(selectedWithdrawalRekening?.jenisSimpanan || '').toUpperCase()
+    const isNonSukarelaType = selectedJenis !== 'SUKARELA'
 
     if (!Number.isInteger(rekeningId) || rekeningId <= 0) {
-      setWithdrawalError('Pilih rekening simpanan terlebih dahulu.')
+      setWithdrawalError('Pilih rekening setoran terlebih dahulu.')
+      return
+    }
+    if (selectedWithdrawalNasabah?.isActive && isNonSukarelaType) {
+      setWithdrawalError('Anggota aktif hanya dapat melakukan penarikan simpanan sukarela.')
       return
     }
     if (!Number.isFinite(nominal) || nominal <= 0) {
@@ -1144,18 +1265,27 @@ function toNasabahOption(item) {
       })
       const json = await res.json().catch(() => null)
       if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menambahkan penarikan simpanan')
+        throw new Error(json?.message || 'Gagal menambahkan penarikan')
       }
 
       setWithdrawalSuccess(json?.message || 'Transaksi berhasil diproses')
       setIsWithdrawalModalOpen(false)
       await fetchTransactionsPage()
     } catch (err) {
-      setWithdrawalError(err?.message || 'Terjadi kesalahan saat membuat penarikan simpanan')
+      setWithdrawalError(err?.message || 'Terjadi kesalahan saat membuat penarikan')
     } finally {
       setWithdrawalSubmitting(false)
     }
-  }, [authFetch, withdrawalRekeningId, withdrawalAmount, withdrawalMethod, withdrawalNote, fetchTransactionsPage])
+  }, [
+    authFetch,
+    withdrawalRekeningId,
+    selectedWithdrawalRekening?.jenisSimpanan,
+    selectedWithdrawalNasabah?.isActive,
+    withdrawalAmount,
+    withdrawalMethod,
+    withdrawalNote,
+    fetchTransactionsPage,
+  ])
 
   // ─────────────────────────────────────────────────────────────────────────
   // Filter modal helpers
@@ -1259,12 +1389,10 @@ function toNasabahOption(item) {
     () => [
       { title: 'Transaksi Masuk', value: formatCurrency(summary.incoming), color: 'text-emerald-700', icon: TrendingUp },
       { title: 'Transaksi Keluar', value: formatCurrency(summary.outgoing), color: 'text-rose-600', icon: TrendingDown },
-      { title: 'Menunggu Verifikasi', value: `${summary.other} Transaksi`, color: 'text-[#1967D2]', icon: CheckCircle2 },
+      { title: 'Menunggu Verifikasi', value: `${pendingVerificationCount} Transaksi`, color: 'text-[#1967D2]', icon: CheckCircle2 },
     ],
-    [summary.incoming, summary.outgoing, summary.other]
+    [summary.incoming, summary.outgoing, pendingVerificationCount]
   )
-  const detailStatusMeta = useMemo(() => getStatusMeta(detailData), [detailData])
-
   useEffect(() => {
     if (!error) return
     toast.error(error)
@@ -1332,7 +1460,7 @@ function toNasabahOption(item) {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
                 className="h-10 pl-9"
-                placeholder="Cari anggota, pegawai, jenis, metode, status"
+                placeholder="Cari anggota, pegawai, jenis, metode"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -1401,7 +1529,6 @@ function toNasabahOption(item) {
                 <th className="px-3 py-2">Pegawai</th>
                 <th className="px-3 py-2">Nominal</th>
                 <th className="px-3 py-2">Metode</th>
-                <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Tanggal</th>
                 <th className="px-3 py-2 text-right">Aksi</th>
               </tr>
@@ -1409,11 +1536,11 @@ function toNasabahOption(item) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-sm text-slate-500">Memuat data transaksi...</td>
+                  <td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">Memuat data transaksi...</td>
                 </tr>
               ) : filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-sm text-slate-500">Tidak ada data transaksi.</td>
+                  <td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">Tidak ada data transaksi.</td>
                 </tr>
               ) : (
                 filteredTransactions.map((row) => (
@@ -1427,11 +1554,6 @@ function toNasabahOption(item) {
                     <td className="px-3 py-3 align-top font-medium text-slate-700">{resolvePegawaiName(row)}</td>
                     <td className="px-3 py-3 align-top font-medium text-slate-700">{formatCurrency(row.nominal)}</td>
                     <td className="px-3 py-3 align-top text-slate-500">{mapMethodLabel(row.metodePembayaran)}</td>
-                    <td className="px-3 py-3 align-top">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusMeta(row).className}`}>
-                        {getStatusMeta(row).label}
-                      </span>
-                    </td>
                     <td className="px-3 py-3 align-top text-slate-500">{formatDate(row.tanggal)}</td>
                     <td className="px-3 py-3 align-top text-right">
                       <div className="relative inline-flex" data-transaction-action-zone="true">
@@ -1600,11 +1722,7 @@ function toNasabahOption(item) {
                       <div className="min-w-0">
                         <p className="text-xs text-gray-500">Jenis Transaksi</p>
                         <h3 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight break-words">{mapTypeLabel(detailData?.jenisTransaksi)}</h3>
-                        <p className="text-sm text-[#0066FF] font-medium mt-1">Transaksi #{detailData?.id ?? '-'}</p>
                       </div>
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold w-fit ${detailStatusMeta.className}`}>
-                        {detailStatusMeta.label}
-                      </span>
                     </div>
                   </div>
 
@@ -1842,11 +1960,11 @@ function toNasabahOption(item) {
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
               <div>
-                <h2 className="text-base font-semibold text-slate-900">Tambah Pinjaman</h2>
+                <h2 className="text-base font-semibold text-slate-900">Tambah Pencairan</h2>
               </div>
               <button
                 type="button"
-                aria-label="Tutup tambah pinjaman"
+                aria-label="Tutup tambah pencairan"
                 className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 onClick={closeLoanModal}
               >
@@ -1880,7 +1998,7 @@ function toNasabahOption(item) {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Jumlah Pinjaman</label>
+                <label className="text-sm font-medium text-slate-700">Jumlah Pencairan</label>
                 <Input
                   type="number"
                   inputMode="numeric"
@@ -1927,7 +2045,7 @@ function toNasabahOption(item) {
                 onClick={submitLoan}
                 disabled={loanSubmitting}
               >
-                {loanSubmitting ? 'Menyimpan...' : 'Simpan Pinjaman'}
+                {loanSubmitting ? 'Menyimpan...' : 'Simpan Pencairan'}
               </Button>
             </div>
           </div>
@@ -1961,31 +2079,57 @@ function toNasabahOption(item) {
 
             <div className="space-y-4 px-4 py-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Pinjaman (Anggota Aktif)</label>
+                <label className="text-sm font-medium text-slate-700">Anggota</label>
                 <Input
                   type="text"
                   value={installmentLoanSearch}
                   onChange={(e) => setInstallmentLoanSearch(e.target.value)}
                   className="h-10"
-                  placeholder="Cari nama anggota..."
+                  placeholder="Cari anggota yang punya pinjaman..."
                 />
+                <select
+                  value={installmentNasabahId}
+                  onChange={(e) => {
+                    setInstallmentNasabahId(e.target.value)
+                    setInstallmentPinjamanId('')
+                  }}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Pilih anggota</option>
+                  {displayedInstallmentNasabahOptions.map((item) => (
+                    <option key={item.id} value={String(item.id)}>{item.name}</option>
+                  ))}
+                </select>
+                {displayedInstallmentNasabahOptions.length === 0 && (
+                  <p className="text-xs text-slate-500">Tidak ada anggota yang memiliki pinjaman.</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Pinjaman Anggota</label>
                 <select
                   value={installmentPinjamanId}
                   onChange={(e) => setInstallmentPinjamanId(e.target.value)}
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!installmentNasabahId}
                 >
                   <option value="">Pilih pinjaman</option>
                   {displayedInstallmentLoanOptions.map((item) => (
-                    <option key={item.id} value={String(item.id)}>{item.label}</option>
+                    <option key={item.id} value={String(item.id)}>
+                      {item.label} - Sisa {formatCurrency(item.sisaPinjaman)}
+                    </option>
                   ))}
                 </select>
-                {displayedInstallmentLoanOptions.length === 0 && (
-                  <p className="text-xs text-slate-500">Tidak ada pinjaman disetujui dari anggota aktif.</p>
+                {installmentNasabahId && displayedInstallmentLoanOptions.length === 0 && (
+                  <p className="text-xs text-slate-500">Anggota ini belum memiliki pinjaman yang bisa diangsur.</p>
                 )}
                 {selectedInstallmentLoan && (
                   <div className="space-y-1 text-xs text-slate-600">
                     <p>
                       Pinjaman dipilih milik: <span className="font-semibold text-slate-800">{selectedInstallmentLoan.nasabahName}</span>
+                    </p>
+                    <p>
+                      Nominal pinjaman: <span className="font-semibold text-slate-800">{formatCurrency(selectedInstallmentLoan.jumlahPinjaman)}</span>
                     </p>
                     <p>
                       Sisa pinjaman: <span className="font-semibold text-slate-800">{formatCurrency(selectedInstallmentLoan.sisaPinjaman)}</span>
@@ -2072,11 +2216,11 @@ function toNasabahOption(item) {
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
               <div>
-                <h2 className="text-base font-semibold text-slate-900">Tambah Simpanan</h2>
+                <h2 className="text-base font-semibold text-slate-900">Tambah Setoran</h2>
               </div>
               <button
                 type="button"
-                aria-label="Tutup tambah simpanan"
+                aria-label="Tutup tambah setoran"
                 className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 onClick={closeSavingsModal}
               >
@@ -2086,7 +2230,7 @@ function toNasabahOption(item) {
 
             <div className="space-y-4 px-4 py-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Anggota (Aktif)</label>
+                <label className="text-sm font-medium text-slate-700">Anggota Aktif</label>
                 <Input
                   type="text"
                   value={savingsNasabahSearch}
@@ -2107,14 +2251,14 @@ function toNasabahOption(item) {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Rekening Simpanan</label>
+                <label className="text-sm font-medium text-slate-700">Rekening Setoran</label>
                 <select
                   value={savingsRekeningId}
                   onChange={(e) => setSavingsRekeningId(e.target.value)}
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   disabled={!savingsNasabahId || savingsLoadingRekening}
                 >
-                  <option value="">{savingsLoadingRekening ? 'Memuat rekening...' : 'Pilih rekening simpanan'}</option>
+                  <option value="">{savingsLoadingRekening ? 'Memuat rekening...' : 'Pilih rekening setoran'}</option>
                   {savingsRekeningOptions.map((item) => (
                     <option key={item.id} value={String(item.id)}>{item.label}</option>
                   ))}
@@ -2161,7 +2305,7 @@ function toNasabahOption(item) {
                   onChange={(e) => setSavingsNote(e.target.value)}
                   rows={3}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Contoh: Setoran rutin simpanan wajib"
+                  placeholder="Contoh: Setoran rutin wajib"
                 />
               </div>
 
@@ -2220,7 +2364,7 @@ function toNasabahOption(item) {
 
             <div className="space-y-4 px-4 py-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Anggota (Tidak Aktif)</label>
+                <label className="text-sm font-medium text-slate-700">Anggota Aktif Dan Tidak Aktif</label>
                 <Input
                   type="text"
                   value={withdrawalNasabahSearch}
@@ -2241,14 +2385,14 @@ function toNasabahOption(item) {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Rekening Simpanan</label>
+                <label className="text-sm font-medium text-slate-700">Rekening Setoran</label>
                 <select
                   value={withdrawalRekeningId}
                   onChange={(e) => setWithdrawalRekeningId(e.target.value)}
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   disabled={!withdrawalNasabahId || withdrawalLoadingRekening}
                 >
-                  <option value="">{withdrawalLoadingRekening ? 'Memuat rekening...' : 'Pilih rekening simpanan'}</option>
+                  <option value="">{withdrawalLoadingRekening ? 'Memuat rekening...' : 'Pilih rekening setoran'}</option>
                   {withdrawalRekeningOptions.map((item) => (
                     <option key={item.id} value={String(item.id)}>{item.label}</option>
                   ))}
@@ -2295,7 +2439,7 @@ function toNasabahOption(item) {
                   onChange={(e) => setWithdrawalNote(e.target.value)}
                   rows={3}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Contoh: Penarikan simpanan anggota non aktif"
+                  placeholder="Contoh: Penarikan setoran anggota non aktif"
                 />
               </div>
 

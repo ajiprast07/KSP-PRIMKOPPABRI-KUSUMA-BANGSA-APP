@@ -284,13 +284,13 @@ function StatementTable({ periodeText, rows }) {
 function mapStatementRows(reports) {
   return [
     { type: 'section', label: '1 - Pendapatan Operasional', value: '' },
-    { type: 'item', label: '1.1 - Simpanan (Nominal Setoran Simpanan Periode Berjalan)', value: formatCurrency(reports?.transaksi?.breakdown?.pemasukan?.setoran) },
+    { type: 'item', label: '1.1 - Setoran (Nominal Setoran Simpanan Periode Berjalan)', value: formatCurrency(reports?.transaksi?.breakdown?.pemasukan?.setoran) },
     { type: 'item', label: '1.2 - Angsuran (Nominal Angsuran Pinjaman Periode Berjalan)', value: formatCurrency(reports?.transaksi?.breakdown?.pemasukan?.angsuran) },
     { type: 'total', label: 'TOTAL PEMASUKAN (Simpanan + Angsuran)', value: formatCurrency(reports?.ringkasan?.totalPemasukan) },
 
     { type: 'section', label: '2 - Pengeluaran Operasional', value: '' },
     { type: 'item', label: '2.1 - Penarikan (Nominal Penarikan Simpanan Periode Berjalan)', value: formatCurrency(reports?.transaksi?.breakdown?.pengeluaran?.penarikan) },
-    { type: 'item', label: '2.2 - Pinjaman (Nominal Pencairan Pinjaman Periode Berjalan)', value: formatCurrency(reports?.transaksi?.breakdown?.pengeluaran?.pencairan) },
+    { type: 'item', label: '2.2 - Pencairan (Nominal Pencairan Pinjaman Periode Berjalan)', value: formatCurrency(reports?.transaksi?.breakdown?.pengeluaran?.pencairan) },
     { type: 'total', label: 'TOTAL PENGELUARAN (Penarikan + Pinjaman)', value: formatCurrency(reports?.ringkasan?.totalPengeluaran) },
 
     { type: 'section', label: '3 - Ringkasan Simpanan dan Pinjaman', value: '' },

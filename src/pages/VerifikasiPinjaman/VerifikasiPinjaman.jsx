@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, CheckCircle, Eye, Loader2, MoreVertical, ShieldCheck, Trash2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle, Eye, Filter, Loader2, MoreVertical, Search, ShieldCheck, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/AuthContext'
+
+const LOAN_STATUS_OPTIONS = [
+  { value: 'ALL', label: 'Semua Status' },
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'DISETUJUI', label: 'Disetujui' },
+  { value: 'DITOLAK', label: 'Ditolak' },
+  { value: 'LUNAS', label: 'Lunas' },
+]
+const LOAN_SORT_OPTIONS = [
+  { value: 'desc', label: 'Terbesar ke Terkecil' },
+  { value: 'asc', label: 'Terkecil ke Terbesar' },
+]
 
 function useToast() {
   const [toasts, setToasts] = useState([])
@@ -120,11 +133,25 @@ export default function VerifikasiPinjaman({ onNavigate }) {
   const { authFetch } = useAuth()
   const toast = useToast()
 
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [sortFilter, setSortFilter] = useState('desc')
+
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
+  const [draftStatusFilter, setDraftStatusFilter] = useState('ALL')
+  const [draftSortFilter, setDraftSortFilter] = useState('desc')
+  const [filterError, setFilterError] = useState('')
+
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [actionMenuOpenId, setActionMenuOpenId] = useState('')
+
+  const [cursorAfter, setCursorAfter] = useState('')
+  const [cursorBefore, setCursorBefore] = useState('')
+  const [pageIndex, setPageIndex] = useState(1)
+  const [hasNextPage, setHasNextPage] = useState(false)
 
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
@@ -144,17 +171,19 @@ export default function VerifikasiPinjaman({ onNavigate }) {
 
   const actionMenuContainerRef = useRef(null)
 
-  const fetchAllLoans = useCallback(async () => {
-    const collected = []
-    const seenCursor = new Set()
-    let cursor = null
-    let guard = 0
+  const fetchLoansPage = useCallback(async () => {
+    setLoading(true)
+    setError('')
 
-    while (guard < 200) {
+    try {
       const params = new URLSearchParams()
-      if (cursor !== null && cursor !== undefined && cursor !== '') {
-        params.set('cursor', String(cursor))
+      if (cursorAfter) params.set('after', cursorAfter)
+      if (cursorBefore) params.set('before', cursorBefore)
+
+      if (statusFilter !== 'ALL') {
+        params.set('status', statusFilter)
       }
+      params.set('sort', sortFilter)
 
       const query = params.toString()
       const endpoint = query ? `/api/pinjaman?${query}` : '/api/pinjaman'
@@ -166,25 +195,20 @@ export default function VerifikasiPinjaman({ onNavigate }) {
       }
 
       const loanRows = toArray(json?.data ?? json)
-      collected.push(...loanRows)
-
       const pg = json?.pagination ?? {}
-      const hasNext = Boolean(pg?.hasNext ?? pg?.has_next)
-      const nextCursor = pg?.nextCursor ?? pg?.next_cursor
-      if (!hasNext || nextCursor === null || nextCursor === undefined || nextCursor === '') {
-        break
-      }
+      const apiHasNext = pg?.hasNext ?? pg?.has_next
+      const resolvedHasNext = typeof apiHasNext === 'boolean' ? apiHasNext : false
 
-      const nextCursorKey = String(nextCursor)
-      if (seenCursor.has(nextCursorKey)) break
-      seenCursor.add(nextCursorKey)
-      cursor = nextCursor
-      guard += 1
+      setRows(loanRows)
+      setHasNextPage(Boolean(resolvedHasNext))
+    } catch (err) {
+      setRows([])
+      setHasNextPage(false)
+      setError(err?.message || 'Terjadi kesalahan saat memuat data pinjaman')
+    } finally {
+      setLoading(false)
     }
-
-    return Array.from(new Map(collected.map((item) => [item?.id, item])).values())
-      .sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))
-  }, [authFetch])
+  }, [authFetch, cursorAfter, cursorBefore, statusFilter, sortFilter])
 
   const fetchLatestDisbursementTransaction = useCallback(async (loanId) => {
     const targetLoanId = Number(loanId)
@@ -237,24 +261,52 @@ export default function VerifikasiPinjaman({ onNavigate }) {
     return latest
   }, [authFetch])
 
-  const loadLoans = useCallback(async () => {
-    setLoading(true)
-    setError('')
-
-    try {
-      const data = await fetchAllLoans()
-      setRows(data)
-    } catch (err) {
-      setRows([])
-      setError(err?.message || 'Terjadi kesalahan saat memuat data pinjaman')
-    } finally {
-      setLoading(false)
-    }
-  }, [fetchAllLoans])
-
   useEffect(() => {
-    loadLoans()
-  }, [loadLoans])
+    fetchLoansPage()
+  }, [fetchLoansPage])
+
+  const goToNextPage = useCallback(() => {
+    if (!hasNextPage || rows.length === 0) return
+    const lastId = rows[rows.length - 1]?.id
+    if (!lastId) return
+    setCursorAfter(String(lastId))
+    setCursorBefore('')
+    setPageIndex((prev) => prev + 1)
+    setActionMenuOpenId('')
+  }, [hasNextPage, rows])
+
+  const goToPrevPage = useCallback(() => {
+    if (pageIndex <= 1 || rows.length === 0) return
+    const firstId = rows[0]?.id
+    if (!firstId) return
+    setCursorBefore(String(firstId))
+    setCursorAfter('')
+    setPageIndex((prev) => Math.max(1, prev - 1))
+    setActionMenuOpenId('')
+  }, [pageIndex, rows])
+
+  const openFilterModal = useCallback(() => {
+    setDraftStatusFilter(statusFilter)
+    setDraftSortFilter(sortFilter)
+    setFilterError('')
+    setIsFilterModalOpen(true)
+  }, [statusFilter, sortFilter])
+
+  const applyFilterModal = useCallback(() => {
+    setStatusFilter(draftStatusFilter)
+    setSortFilter(draftSortFilter)
+    setCursorAfter('')
+    setCursorBefore('')
+    setPageIndex(1)
+    setFilterError('')
+    setIsFilterModalOpen(false)
+  }, [draftStatusFilter, draftSortFilter])
+
+  const resetFilterModal = useCallback(() => {
+    setDraftStatusFilter('ALL')
+    setDraftSortFilter('desc')
+    setFilterError('')
+  }, [])
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -434,13 +486,13 @@ export default function VerifikasiPinjaman({ onNavigate }) {
 
       setVerifyTarget(null)
       setVerifyNote('')
-      await loadLoans()
+      await fetchLoansPage()
     } catch (err) {
       setError(err?.message || 'Terjadi kesalahan saat verifikasi pinjaman')
     } finally {
       setVerifySubmittingAction('')
     }
-  }, [authFetch, verifyTarget?.id, verifyNote, verifyDisbursementMethod, loadLoans])
+  }, [authFetch, verifyTarget?.id, verifyNote, verifyDisbursementMethod, fetchLoansPage])
 
   const openDeleteModal = useCallback((loan) => {
     setActionMenuOpenId('')
@@ -477,13 +529,53 @@ export default function VerifikasiPinjaman({ onNavigate }) {
 
       setSuccess(json?.message || 'Pinjaman berhasil dihapus')
       setDeleteTarget(null)
-      await loadLoans()
+      await fetchLoansPage()
     } catch (err) {
       setError(err?.message || 'Terjadi kesalahan saat menghapus pinjaman')
     } finally {
       setDeleteSubmitting(false)
     }
-  }, [authFetch, deleteTarget?.id, loadLoans])
+  }, [authFetch, deleteTarget?.id, fetchLoansPage])
+
+  const filteredRows = useMemo(() => {
+    const sortNewestFirst = (list) => {
+      return [...list].sort((a, b) => {
+        const aTime = new Date(a?.createdAt || a?.tanggalPengajuan || a?.updatedAt || 0).getTime()
+        const bTime = new Date(b?.createdAt || b?.tanggalPengajuan || b?.updatedAt || 0).getTime()
+
+        const safeATime = Number.isNaN(aTime) ? 0 : aTime
+        const safeBTime = Number.isNaN(bTime) ? 0 : bTime
+        if (safeBTime !== safeATime) return safeBTime - safeATime
+
+        return Number(b?.id || 0) - Number(a?.id || 0)
+      })
+    }
+
+    const keyword = search.trim().toLowerCase()
+    if (!keyword) return sortNewestFirst(rows)
+
+    const searchedRows = rows.filter((loan) => {
+      const haystack = [
+        loan?.id,
+        loan?.nasabah?.nama,
+        loan?.nasabah?.nomorAnggota,
+        loan?.jumlahPinjaman,
+        loan?.tenorBulan,
+        loan?.sisaPinjaman,
+        getLoanStatusMeta(loan?.status).label,
+      ]
+        .map((item) => String(item ?? '').toLowerCase())
+        .join(' ')
+
+      return haystack.includes(keyword)
+    })
+
+    return sortNewestFirst(searchedRows)
+  }, [rows, search])
+
+  const hasActiveFilter =
+    statusFilter !== 'ALL' ||
+    sortFilter !== 'desc'
 
   const detailMeta = useMemo(() => getLoanStatusMeta(detailData?.status), [detailData?.status])
 
@@ -514,13 +606,39 @@ export default function VerifikasiPinjaman({ onNavigate }) {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4" ref={actionMenuContainerRef}>
+        <div className="mb-3 flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:max-w-md">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                className="h-10 pl-9"
+                placeholder="Cari anggota, nominal, atau tenor..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className={`h-10 w-10 border-slate-200 ${hasActiveFilter ? 'bg-blue-50 text-blue-700 hover:bg-blue-100' : ''}`}
+              onClick={openFilterModal}
+              title="Filter"
+            >
+              <Filter className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
         <div className="hidden overflow-x-auto lg:block">
-          <table className="w-full min-w-[820px] border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[920px] border-separate border-spacing-0 text-sm">
             <thead>
               <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-slate-400">
                 <th className="px-3 py-2">Anggota</th>
-                <th className="px-3 py-2">Jumlah</th>
+                <th className="px-3 py-2">Jumlah Pencairan</th>
                 <th className="px-3 py-2">Tenor</th>
+                <th className="px-3 py-2">Total Bunga</th>
+                <th className="px-3 py-2">Total Pengembalian</th>
                 <th className="px-3 py-2">Sisa</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Aksi</th>
@@ -529,14 +647,14 @@ export default function VerifikasiPinjaman({ onNavigate }) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">Memuat data pinjaman...</td>
+                  <td colSpan={11} className="px-3 py-6 text-center text-sm text-slate-500">Memuat data pinjaman...</td>
                 </tr>
-              ) : rows.length === 0 ? (
+              ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">Tidak ada data pinjaman.</td>
+                  <td colSpan={11} className="px-3 py-6 text-center text-sm text-slate-500">Tidak ada data pinjaman.</td>
                 </tr>
               ) : (
-                rows.map((loan) => {
+                filteredRows.map((loan) => {
                   const statusMeta = getLoanStatusMeta(loan?.status)
                   const canVerify = canVerifyLoanByStatus(loan?.status)
                   return (
@@ -544,6 +662,8 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                       <td className="px-3 py-3 align-top">{loan?.nasabah?.nama || '-'}</td>
                       <td className="px-3 py-3 align-top">{formatCurrency(loan?.jumlahPinjaman)}</td>
                       <td className="px-3 py-3 align-top">{loan?.tenorBulan ?? '-'} Bulan</td>
+                      <td className="px-3 py-3 align-top">{formatCurrency(loan?.totalBungaFlat)}</td>
+                      <td className="px-3 py-3 align-top">{formatCurrency(loan?.totalPengembalian)}</td>
                       <td className="px-3 py-3 align-top">{formatCurrency(loan?.sisaPinjaman)}</td>
                       <td className="px-3 py-3 align-top">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}>
@@ -607,10 +727,10 @@ export default function VerifikasiPinjaman({ onNavigate }) {
         <div className="space-y-3 lg:hidden">
           {loading ? (
             <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">Memuat data pinjaman...</div>
-          ) : rows.length === 0 ? (
+          ) : filteredRows.length === 0 ? (
             <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">Tidak ada data pinjaman.</div>
           ) : (
-            rows.map((loan) => {
+            filteredRows.map((loan) => {
               const statusMeta = getLoanStatusMeta(loan?.status)
               const canVerify = canVerifyLoanByStatus(loan?.status)
               return (
@@ -618,7 +738,6 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{loan?.nasabah?.nama || '-'}</p>
-                      <p className="text-xs text-slate-500">Pinjaman #{loan?.id ?? '-'}</p>
                     </div>
                     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}>
                       {statusMeta.label}
@@ -628,6 +747,10 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
                     <p>Jumlah: {formatCurrency(loan?.jumlahPinjaman)}</p>
                     <p className="text-right">Tenor: {loan?.tenorBulan ?? '-'} Bulan</p>
+                    <p>Bunga: {loan?.bungaPersen ?? '-'}%</p>
+                    <p className="text-right">Angsuran: {formatCurrency(loan?.angsuranPerBulan)}</p>
+                    <p>Total Bunga: {formatCurrency(loan?.totalBungaFlat)}</p>
+                    <p className="text-right">Total Pengembalian: {formatCurrency(loan?.totalPengembalian)}</p>
                     <p className="col-span-2 text-right text-sm font-semibold text-slate-700">
                       Sisa: {formatCurrency(loan?.sisaPinjaman)}
                     </p>
@@ -665,6 +788,32 @@ export default function VerifikasiPinjaman({ onNavigate }) {
               )
             })
           )}
+        </div>
+
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-gray-500">
+            Halaman <span className="font-semibold text-gray-700">{pageIndex}</span>
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 px-3 text-xs"
+              onClick={goToPrevPage}
+              disabled={loading || pageIndex <= 1}
+            >
+              Sebelumnya
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 px-3 text-xs"
+              onClick={goToNextPage}
+              disabled={loading || !hasNextPage}
+            >
+              Berikutnya
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -707,7 +856,6 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                       <div className="min-w-0">
                         <p className="text-xs text-gray-500">Nama Anggota</p>
                         <h3 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight break-words">{detailData?.nasabah?.nama || '-'}</h3>
-                        <p className="text-sm text-[#0066FF] font-medium mt-1">Pinjaman #{detailData?.id ?? '-'}</p>
                       </div>
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold w-fit ${detailMeta.className}`}>
                         {detailMeta.label}
@@ -720,24 +868,44 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                       <h4 className="text-sm font-semibold text-gray-900">Data Pinjaman</h4>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between gap-4">
-                          <span className="text-gray-500">Jumlah Pinjaman</span>
-                          <span className="text-gray-900 text-right font-medium">{formatCurrency(detailData?.jumlahPinjaman)}</span>
+                          <span className="text-gray-500">ID Pinjaman</span>
+                          <span className="text-gray-900 text-right font-medium">{detailData?.id ?? '-'}</span>
                         </div>
                         <div className="flex justify-between gap-4">
-                          <span className="text-gray-500">Sisa Pinjaman</span>
-                          <span className="text-gray-900 text-right font-medium">{formatCurrency(detailData?.sisaPinjaman)}</span>
+                          <span className="text-gray-500">Jumlah Pinjaman</span>
+                          <span className="text-gray-900 text-right font-medium">{formatCurrency(detailData?.jumlahPinjaman)}</span>
                         </div>
                         <div className="flex justify-between gap-4">
                           <span className="text-gray-500">Bunga Persen</span>
                           <span className="text-gray-900 text-right font-medium">{detailData?.bungaPersen ?? '-'}%</span>
                         </div>
                         <div className="flex justify-between gap-4">
-                          <span className="text-gray-500">Tenor</span>
+                          <span className="text-gray-500">Tenor Bulan</span>
                           <span className="text-gray-900 text-right font-medium">{detailData?.tenorBulan ?? '-'} Bulan</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Total Bunga Flat</span>
+                          <span className="text-gray-900 text-right font-medium">{formatCurrency(detailData?.totalBungaFlat)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Total Pengembalian</span>
+                          <span className="text-gray-900 text-right font-medium">{formatCurrency(detailData?.totalPengembalian)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Angsuran per Bulan</span>
+                          <span className="text-gray-900 text-right font-medium">{formatCurrency(detailData?.angsuranPerBulan)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Sisa Pinjaman</span>
+                          <span className="text-gray-900 text-right font-medium">{formatCurrency(detailData?.sisaPinjaman)}</span>
                         </div>
                         <div className="flex justify-between gap-4">
                           <span className="text-gray-500">Tanggal Persetujuan</span>
                           <span className="text-gray-900 text-right font-medium">{formatDate(detailData?.tanggalPersetujuan)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Jatuh Tempo</span>
+                          <span className="text-gray-900 text-right font-medium">{formatDate(detailData?.jatuhTempo)}</span>
                         </div>
                         <div className="flex justify-between gap-4">
                           <span className="text-gray-500">Metode Pencairan</span>
@@ -756,6 +924,10 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                       <h4 className="text-sm font-semibold text-gray-900">Data Anggota</h4>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Nama Anggota</span>
+                          <span className="text-gray-900 text-right font-medium">{detailData?.nasabah?.nama || '-'}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
                           <span className="text-gray-500">Nomor Anggota</span>
                           <span className="text-gray-900 text-right font-medium">{detailData?.nasabah?.nomorAnggota || '-'}</span>
                         </div>
@@ -768,12 +940,36 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                           <span className="text-gray-900 text-right font-medium">{detailData?.nasabah?.noHp || '-'}</span>
                         </div>
                         <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Alamat</span>
+                          <span className="text-gray-900 text-right font-medium">{detailData?.nasabah?.alamat || '-'}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
                           <span className="text-gray-500">Pekerjaan</span>
                           <span className="text-gray-900 text-right font-medium">{detailData?.nasabah?.pekerjaan || '-'}</span>
                         </div>
                         <div className="flex justify-between gap-4">
                           <span className="text-gray-500">Instansi</span>
                           <span className="text-gray-900 text-right font-medium">{detailData?.nasabah?.instansi || '-'}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Penghasilan Bulanan</span>
+                          <span className="text-gray-900 text-right font-medium">{formatCurrency(detailData?.nasabah?.penghasilanBulanan)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Tanggal Lahir</span>
+                          <span className="text-gray-900 text-right font-medium">{formatDate(detailData?.nasabah?.tanggalLahir)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Tanggal Daftar</span>
+                          <span className="text-gray-900 text-right font-medium">{formatDate(detailData?.nasabah?.tanggalDaftar)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Status Anggota</span>
+                          <span className="text-gray-900 text-right font-medium">{detailData?.nasabah?.status || '-'}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-gray-500">Catatan Anggota</span>
+                          <span className="text-gray-900 text-right font-medium">{detailData?.nasabah?.catatan || '-'}</span>
                         </div>
                       </div>
                     </div>
@@ -1015,6 +1211,75 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                 disabled={deleteSubmitting}
               >
                 {deleteSubmitting ? 'Menghapus...' : 'Hapus'}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {isFilterModalOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => { setIsFilterModalOpen(false); setFilterError('') }}
+        >
+          <div
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl bg-white border border-slate-200 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Filter Verifikasi</h2>
+                <p className="text-xs text-slate-500">Pilih status dan urutan nominal pinjaman</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Tutup filter"
+                className="rounded-md p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                onClick={() => { setIsFilterModalOpen(false); setFilterError('') }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-4 py-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Status</label>
+                <select
+                  value={draftStatusFilter}
+                  onChange={(e) => setDraftStatusFilter(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {LOAN_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Urutkan Nominal</label>
+                <select
+                  value={draftSortFilter}
+                  onChange={(e) => setDraftSortFilter(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {LOAN_SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {filterError ? (
+                <p className="text-xs text-rose-600">{filterError}</p>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3">
+              <Button type="button" variant="outline" className="h-10 flex-1" onClick={resetFilterModal}>
+                Reset
+              </Button>
+              <Button type="button" className="h-10 flex-1 bg-[#003399] text-white hover:bg-[#002b84]" onClick={applyFilterModal}>
+                Terapkan
               </Button>
             </div>
           </div>
