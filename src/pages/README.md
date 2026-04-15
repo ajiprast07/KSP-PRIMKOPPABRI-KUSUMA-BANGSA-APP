@@ -1,55 +1,62 @@
 # Pages Folder
 
-Folder ini berisi semua halaman/pages aplikasi.
+Folder ini berisi seluruh halaman utama aplikasi.
 
-## Struktur
+## Daftar Halaman Saat Ini
 
-Setiap page memiliki folder sendiri untuk mempermudah organisasi:
-
-```
+```text
 pages/
-├── Login/
-│   └── Login.jsx
-├── SignUp/
-│   └── SignUp.jsx
-├── Dashboard/          (akan ditambahkan)
-│   └── Dashboard.jsx
-├── index.js           (centralized exports)
-└── README.md
+  Aktivitas/
+  Dashboard/
+  Keanggotaan/
+  Laporan/
+  LaporanPage/
+  Login/
+  Pengaturan/
+  Pengguna/
+  Profile/
+  Transaksi/
+  VerifikasiPinjaman/
+  index.js
+  README.md
 ```
 
-## Cara Menambahkan Page Baru
+## Pola Folder Halaman
 
-1. Buat folder baru dengan nama page (PascalCase)
-2. Buat file `.jsx` dengan nama yang sama di dalam folder
-3. Export page tersebut di `index.js`
-4. Import dari `@/pages` di file lain
+Setiap halaman menggunakan pola:
 
-### Contoh:
-
-**1. Membuat page baru** (`src/pages/Dashboard/Dashboard.jsx`):
-```jsx
-export default function Dashboard() {
-  return (
-    <div>
-      <h1>Dashboard</h1>
-    </div>
-  )
-}
+```text
+pages/NamaHalaman/
+  NamaHalaman.jsx
 ```
 
-**2. Export di** `src/pages/index.js`:
+## Cara Menambahkan Halaman Baru
+
+1. Buat folder halaman baru dengan format PascalCase.
+2. Tambahkan file komponen utama dengan nama yang sama.
+3. Export halaman di pages/index.js.
+4. Daftarkan halaman di App.jsx bila perlu tampil di navigasi/layout.
+
+Contoh export:
+
 ```js
-export { default as Dashboard } from './Dashboard/Dashboard'
+export { default as NamaHalaman } from './NamaHalaman/NamaHalaman'
 ```
 
-**3. Import di** `App.jsx`:
+Contoh import:
+
 ```jsx
-import { Dashboard } from '@/pages'
+import { NamaHalaman } from '@/pages'
 ```
 
-## Naming Convention
+## Konvensi Penamaan
 
-- Folder: PascalCase (contoh: `Login`, `SignUp`, `UserProfile`)
-- File: PascalCase.jsx (contoh: `Login.jsx`, `SignUp.jsx`)
-- Component name: sama dengan nama file
+- Folder: PascalCase, contoh Login, VerifikasiPinjaman.
+- File halaman: PascalCase.jsx, contoh Transaksi.jsx.
+- Nama komponen default export: sama dengan nama file.
+
+## Catatan Integrasi
+
+- Halaman Transaksi dan VerifikasiPinjaman terhubung lewat alur verifikasi pencairan.
+- Halaman Keanggotaan menampilkan detail anggota, dokumen, simpanan, dan pinjaman.
+- Halaman Laporan dan LaporanPage memakai periode bulan/tahun dari state aplikasi utama.

@@ -1,137 +1,135 @@
-# KSP PRIMKOPPABRI Kusuma Bangsa - Web Application
+# KSP PRIMKOPPABRI Kusuma Bangsa Web App
 
-Web aplikasi untuk KSP PRIMKOPPABRI Kusuma Bangsa menggunakan React, Vite, Tailwind CSS, dan shadcn-ui.
+Aplikasi web internal koperasi untuk pengelolaan dashboard, anggota, transaksi, verifikasi pinjaman, dan laporan.
 
-## 🚀 Quick Start
+## Ringkasan
 
-### Prerequisites
-- Node.js (v18+)
-- npm atau yarn
+- Frontend: React + Vite + Tailwind CSS
+- UI Components: shadcn-ui (customized) + Lucide Icons
+- Arsitektur: single-page dashboard dengan state navigasi per halaman
+- Auth: berbasis AuthContext dengan wrapper authFetch
 
-### Installation
+## Menjalankan Project
+
+Prasyarat:
+- Node.js 18 atau lebih baru
+- npm
+
+Langkah:
 
 ```bash
-# Install dependencies
 npm install
-
-# Run development server
 npm run dev
+```
 
-# Build for production
+Build produksi:
+
+```bash
 npm run build
-
-# Preview production build
 npm run preview
 ```
 
-Aplikasi akan berjalan di `http://localhost:5173`
+Lint:
 
-## 🏗️ Tech Stack
-
-- **React 19** - UI Library
-- **Vite 7** - Build tool & Dev server
-- **Tailwind CSS v4** - Utility-first CSS framework
-- **shadcn-ui** - Re-usable component library
-- **Lucide React** - Icon library
-- **Poppins Font** - Typography
-
-## 📁 Project Structure
-
+```bash
+npm run lint
 ```
+
+Default dev server berjalan di http://localhost:5173.
+
+## Tech Stack
+
+- React 19
+- Vite 7
+- Tailwind CSS 4
+- Lucide React
+- Recharts
+- jsPDF
+
+## Struktur Folder Utama
+
+```text
 src/
-├── components/
-│   └── ui/              # shadcn-ui components (button, input, label)
-├── pages/               # Application pages
-│   ├── Login/
-│   │   └── Login.jsx
-│   └── index.js        # Centralized exports
-├── lib/                 # Utility functions
-│   └── utils.js
-├── App.jsx              # Main component
-├── main.jsx             # Entry point
-└── index.css            # Global styles
-
-Configuration Files:
-├── vite.config.js       # Vite configuration
-├── tailwind.config.js   # Tailwind CSS configuration
-├── postcss.config.js    # PostCSS configuration
-├── jsconfig.json        # Path aliases
-└── components.json      # shadcn-ui configuration
+   App.jsx
+   main.jsx
+   index.css
+   assets/
+   components/
+      common/
+      ui/
+   context/
+      AuthContext.jsx
+   hooks/
+   layouts/
+      DashboardLayout.jsx
+   lib/
+      utils.js
+   pages/
+      Aktivitas/
+      Dashboard/
+      Keanggotaan/
+      Laporan/
+      LaporanPage/
+      Login/
+      Pengaturan/
+      Pengguna/
+      Profile/
+      Transaksi/
+      VerifikasiPinjaman/
+      index.js
 ```
 
-**Lihat `src/STRUCTURE.md` untuk dokumentasi lengkap struktur folder.**
+Dokumentasi struktur tambahan tersedia di src/STRUCTURE.md.
 
-## 🎨 Features
+## Halaman Yang Tersedia
 
-- ✅ Responsive login page
-- ✅ Modern UI dengan Tailwind CSS
-- ✅ Poppins font untuk semua text
-- ✅ Organized folder structure untuk scalability
-- ✅ Path aliases (`@/`) untuk clean imports
+- Login
+- Dashboard
+- Pengguna
+- Aktivitas
+- Transaksi
+- Verifikasi Pinjaman
+- Laporan
+- Laporan Detail
+- Keanggotaan
+- Pengaturan
+- Profile
 
-## 📝 Menambahkan Page Baru
+Semua export halaman dipusatkan di src/pages/index.js.
 
-1. Buat folder baru di `src/pages/NamaPage/`
-2. Buat file component `NamaPage.jsx`
-3. Export di `src/pages/index.js`:
-   ```js
-   export { default as NamaPage } from './NamaPage/NamaPage'
-   ```
-4. Import di file lain:
-   ```jsx
-   import { NamaPage } from '@/pages'
-   ```
+## Fitur Utama
 
-Lihat `src/pages/README.md` untuk detail lengkap.
+- Tabel data dengan filter, pencarian, dan pagination berbasis backend
+- Modal aksi untuk detail, tambah data, verifikasi, dan hapus
+- Toast notification konsisten antar halaman
+- Tampilan desktop dan mobile responsif untuk modul utama
+- Integrasi transaksi, simpanan, penarikan, angsuran, dan verifikasi pinjaman
 
-## 🔧 Path Aliases
+## Konvensi Pengembangan
 
-Project menggunakan path alias untuk import yang lebih clean:
+- Folder halaman dan komponen: PascalCase
+- File komponen: PascalCase.jsx
+- Utility/helper: camelCase.js
+- Import antar folder menggunakan alias @/
+
+Contoh:
 
 ```jsx
-// ✅ Good - dengan alias
 import { Button } from '@/components/ui/button'
-import { Login } from '@/pages'
+import { Transaksi } from '@/pages'
 import { cn } from '@/lib/utils'
-
-// ❌ Avoid - relative paths
-import { Button } from '../../../components/ui/button'
 ```
 
-## 📚 Documentation
+## Menambahkan Halaman Baru
 
-- `src/STRUCTURE.md` - Dokumentasi struktur project lengkap
-- `src/pages/README.md` - Panduan menambahkan pages baru
-- [Tailwind CSS Docs](https://tailwindcss.com)
-- [shadcn-ui Docs](https://ui.shadcn.com)
+1. Buat folder baru di src/pages/NamaHalaman
+2. Buat file komponen NamaHalaman.jsx
+3. Tambahkan export di src/pages/index.js
+4. Daftarkan halaman di src/App.jsx jika perlu muncul di navigasi dashboard
 
-## 🎯 Current Pages
+## Referensi
 
-- **Login** - Halaman login dengan responsive design
-- **SignUp** - Halaman pendaftaran akun pegawai dengan form lengkap
-
-_Untuk testing: Ganti `<Login />` dengan `<SignUp />` di App.jsx untuk melihat halaman yang berbeda_
-
-## 👥 Development
-
-### Naming Conventions
-- Folders: PascalCase (contoh: `Login`, `Dashboard`)
-- Component files: PascalCase.jsx (contoh: `Login.jsx`)
-- Utility files: camelCase.js (contoh: `utils.js`)
-
-### Code Style
-- Use functional components dengan hooks
-- Use Tailwind utility classes untuk styling
-- Gunakan shadcn-ui components untuk UI elements
-- Ikuti struktur folder yang sudah ditentukan
-
----
-
-## React + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- src/pages/README.md
+- src/STRUCTURE.md
+- https://tailwindcss.com
+- https://ui.shadcn.com

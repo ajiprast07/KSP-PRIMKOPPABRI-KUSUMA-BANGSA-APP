@@ -1,85 +1,98 @@
 # Project Structure
 
-Struktur folder aplikasi KSP PRIMKOPPABRI Kusuma Bangsa.
+Dokumentasi struktur folder aplikasi KSP PRIMKOPPABRI Kusuma Bangsa.
 
-```
+## Struktur Saat Ini
+
+```text
 src/
-├── components/
-│   ├── ui/                    # shadcn-ui components
-│   │   ├── button.jsx
-│   │   ├── input.jsx
-│   │   └── label.jsx
-│   └── [common]/              # Custom reusable components (akan ditambahkan)
-│
-├── pages/                     # Halaman-halaman aplikasi
-│   ├── Login/
-│   │   └── Login.jsx
-│   ├── index.js              # Centralized exports
-│   └── README.md
-│
-├── lib/                       # Utility functions & helpers
-│   └── utils.js
-│
-├── assets/                    # Images, icons, fonts (akan ditambahkan)
-│
-├── App.jsx                    # Main app component
-├── App.css                    # App-level styles
-├── main.jsx                   # Entry point
-└── index.css                  # Global styles & Tailwind
+  App.jsx
+  main.jsx
+  index.css
+  STRUCTURE.md
 
-Root files:
-├── index.html
-├── package.json
-├── vite.config.js
-├── tailwind.config.js
-├── postcss.config.js
-├── jsconfig.json
-└── components.json            # shadcn-ui config
+  assets/
+
+  components/
+    common/
+      Footer.jsx
+      Sidebar.jsx
+    ui/
+      button.jsx
+      input.jsx
+      label.jsx
+
+  context/
+    AuthContext.jsx
+
+  hooks/
+
+  layouts/
+    DashboardLayout.jsx
+
+  lib/
+    api.js
+    utils.js
+
+  pages/
+    Aktivitas/
+    Dashboard/
+    Keanggotaan/
+    Laporan/
+    LaporanPage/
+    Login/
+    Pengaturan/
+    Pengguna/
+    Profile/
+    Transaksi/
+    VerifikasiPinjaman/
+    index.js
+    README.md
 ```
 
-## Folder Descriptions
+## Penjelasan Folder
 
 ### `components/`
-- **`ui/`**: Komponen dari shadcn-ui (button, input, label, dll)
-- **`common/`**: Komponen reusable custom (akan ditambahkan sesuai kebutuhan)
+- `ui/`: komponen dasar UI (button, input, label).
+- `common/`: komponen lintas halaman seperti sidebar dan footer.
 
-### `pages/`
-Semua halaman aplikasi. Setiap page punya folder sendiri.
-- Import pages dari: `import { Login } from '@/pages'`
-- Lihat `pages/README.md` untuk detail
+### `context/`
+- `AuthContext.jsx`: state autentikasi, data user, dan helper request `authFetch`.
+
+### `layouts/`
+- `DashboardLayout.jsx`: layout utama aplikasi setelah login.
 
 ### `lib/`
-Fungsi utility dan helpers.
-- `utils.js`: Helper functions seperti `cn()` untuk className merging
+- `utils.js`: helper umum (misalnya className utility).
+- `api.js`: helper API yang dipakai lintas modul.
 
-### `assets/`
-Untuk menyimpan images, icons, fonts, dll (akan dibuat saat diperlukan)
+### `pages/`
+- Berisi halaman-halaman utama aplikasi.
+- Export terpusat ada di `pages/index.js`.
+- Detail tambahan ada di `pages/README.md`.
 
-## Path Aliases
+## Path Alias
 
-Configured di `jsconfig.json` dan `vite.config.js`:
-- `@/` → `src/`
+Alias import:
+- `@/` mengarah ke `src/`
 
-Contoh usage:
+Contoh:
+
 ```jsx
 import { Button } from '@/components/ui/button'
-import { Login } from '@/pages'
+import { Transaksi } from '@/pages'
 import { cn } from '@/lib/utils'
 ```
 
-## Naming Conventions
+## Konvensi Penamaan
 
-- **Folders**: PascalCase untuk pages/components (`Login`, `SignUp`)
-- **Files**: 
-  - Components: PascalCase.jsx (`Login.jsx`, `Button.jsx`)
-  - Utils: camelCase.js (`utils.js`)
-- **Component names**: Sama dengan nama file
+- Folder halaman: PascalCase, contoh `Transaksi`, `VerifikasiPinjaman`.
+- File komponen halaman: PascalCase.jsx.
+- Utility/helper: camelCase.js.
 
-## Menambahkan Page Baru
+## Menambahkan Halaman Baru
 
-1. Buat folder di `src/pages/NamaPage/`
-2. Buat file `NamaPage.jsx`
-3. Export di `src/pages/index.js`
-4. Import dengan `import { NamaPage } from '@/pages'`
-
-Lihat `src/pages/README.md` untuk detail lebih lanjut.
+1. Buat folder baru di `src/pages/NamaHalaman/`.
+2. Tambahkan file `NamaHalaman.jsx`.
+3. Export di `src/pages/index.js`.
+4. Daftarkan di `src/App.jsx` bila perlu muncul di navigasi.
