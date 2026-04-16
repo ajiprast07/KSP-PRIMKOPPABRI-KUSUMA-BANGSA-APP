@@ -1,7 +1,35 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Login, Dashboard, Pengguna, Aktivitas, Transaksi, Laporan, LaporanPage, Keanggotaan, Pengaturan, Profile, VerifikasiPinjaman } from '@/pages'
 import DashboardLayout from '@/layouts/DashboardLayout'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+
+const SIDEBAR_PAGE_ORDER = ['beranda', 'transaksi', 'laporan', 'keanggotaan', 'pengguna', 'aktivitas', 'pengaturan']
+
+function normalizeToken(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function canAccessPage(pageId, permissions = []) {
+  const rules = {
+    beranda: ['dashboard.read'],
+    transaksi: ['transaksi.read', 'transaksi.process', 'simpanan.setor', 'simpanan.tarik', 'pinjaman.ajukan', 'pinjaman.angsuran', 'pinjaman.cairkan'],
+    'verifikasi-pinjaman': ['pinjaman.verify'],
+    laporan: ['laporan.read', 'laporan.generate', 'laporan.finalize'],
+    'laporan-page': ['laporan.read', 'laporan.generate', 'laporan.finalize'],
+    keanggotaan: ['nasabah.read', 'nasabah.create', 'nasabah.update', 'nasabah.verify'],
+    pengguna: ['pegawai.read', 'user.read'],
+    aktivitas: ['audit.read'],
+    pengaturan: ['settings.read', 'settings.update'],
+  }
+
+  if (pageId === 'profile') return true
+
+  const permissionSet = new Set((Array.isArray(permissions) ? permissions : []).map(normalizeToken))
+  const pageRules = rules[pageId] || []
+
+  if (permissionSet.size === 0) return false
+  return pageRules.some((item) => permissionSet.has(normalizeToken(item)))
+}
 
 function getJakartaPeriod() {
   const now = new Date()
@@ -24,7 +52,7 @@ function getJakartaPeriod() {
 }
 
 function AppContent() {
-  const { isAuthenticated, logout, dataVersion } = useAuth()
+  const { isAuthenticated, logout, dataVersion, permissions } = useAuth()
   const [currentPage, setCurrentPage] = useState('beranda')
   const initialPeriod = getJakartaPeriod()
   const [selectedBulan, setSelectedBulan] = useState(initialPeriod.bulan)
@@ -33,15 +61,6 @@ function AppContent() {
   const handlePeriodChange = (bulan, tahun) => {
     setSelectedBulan(bulan)
     setSelectedTahun(tahun)
-  }
-
-  // Auth pages
-  if (!isAuthenticated) {
-    return (
-      <Login
-        onLoginSuccess={() => setCurrentPage('beranda')}
-      />
-    )
   }
 
   // Render semua halaman sekaligus, sembunyikan yang tidak aktif
@@ -78,25 +97,58 @@ function AppContent() {
     { key: 'profile',     component: <Profile /> },
   ]
 
+  const allowedKeys = useMemo(
+    () => new Set(pages.map((page) => page.key).filter((key) => canAccessPage(key, permissions))),
+    [pages, permissions]
+  )
+
+  const firstAllowedSidebarPage = useMemo(
+    () => SIDEBAR_PAGE_ORDER.find((key) => allowedKeys.has(key)) || 'profile',
+    [allowedKeys]
+  )
+
+  const resolvedCurrentPage = allowedKeys.has(currentPage)
+    ? currentPage
+    : firstAllowedSidebarPage
+
   const sidebarActivePage =
-    currentPage === 'laporan-page' ? 'laporan'
-      : currentPage === 'verifikasi-pinjaman' ? 'transaksi'
-        : currentPage
+    resolvedCurrentPage === 'laporan-page' ? 'laporan'
+      : resolvedCurrentPage === 'verifikasi-pinjaman' ? 'transaksi'
+        : resolvedCurrentPage
+
+  const visiblePages = pages.filter((page) => allowedKeys.has(page.key))
+  const activePageEntry = visiblePages.find((page) => page.key === resolvedCurrentPage)
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    if (currentPage !== resolvedCurrentPage) {
+      setCurrentPage(resolvedCurrentPage)
+    }
+  }, [isAuthenticated, currentPage, resolvedCurrentPage])
+
+  // Auth pages
+  if (!isAuthenticated) {
+    return (
+      <Login
+        onLoginSuccess={() => setCurrentPage('beranda')}
+      />
+    )
+  }
 
   return (
     <DashboardLayout
       activePage={sidebarActivePage}
       onNavigate={(page) => setCurrentPage(page)}
-      onLogout={logout}
+      onLogout={() => {
+        setCurrentPage('beranda')
+        logout()
+      }}
     >
-      {pages.map(({ key, component }) => (
-        <div
-          key={currentPage === key ? key : `${key}-${dataVersion}`}
-          className={currentPage !== key ? 'hidden' : ''}
-        >
-          {component}
+      {activePageEntry ? (
+        <div key={`${activePageEntry.key}-${dataVersion}`}>
+          {activePageEntry.component}
         </div>
-      ))}
+      ) : null}
     </DashboardLayout>
   )
 }

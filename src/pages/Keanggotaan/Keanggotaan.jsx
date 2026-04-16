@@ -464,7 +464,7 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
       if (!createRes.ok) throw new Error(createJson.message || 'Gagal menambahkan anggota')
 
       nasabahId = createJson.data?.id
-      if (!nasabahId) throw new Error('ID nasabah tidak ditemukan.')
+      if (!nasabahId) throw new Error('ID anggota tidak ditemukan.')
 
       await uploadDokumen(nasabahId, files)
 
@@ -1633,12 +1633,6 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
                       <span className="text-gray-500">Penghasilan Bulanan</span>
                       <span className="text-gray-900 text-right">{formatCurrency(detail.penghasilanBulanan)}</span>
                     </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-gray-100 p-4 space-y-3">
-                  <h4 className="text-sm font-semibold text-gray-900">Data Pekerjaan</h4>
-                  <div className="space-y-2 text-sm">
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">Pekerjaan</span>
                       <span className="text-gray-900 text-right">{detail.pekerjaan || '-'}</span>
@@ -1647,6 +1641,12 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
                       <span className="text-gray-500">Instansi</span>
                       <span className="text-gray-900 text-right">{detail.instansi || '-'}</span>
                     </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-100 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-900">Data Penanggung Jawab</h4>
+                  <div className="space-y-2 text-sm">
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">Petugas Penanggung Jawab</span>
                       <span className="text-gray-900 text-right">{detail.pegawai?.nama || '-'}</span>
@@ -1803,7 +1803,7 @@ export default function Keanggotaan() {
     try {
       const res = await authFetch('/api/nasabah')
       const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Gagal mengambil data nasabah')
+      if (!res.ok) throw new Error(json.message || 'Gagal mengambil data anggota')
       const baseMembers = (json.data ?? []).map(normalizeMember)
 
       const membersWithDetail = await Promise.all(
@@ -1979,7 +1979,7 @@ export default function Keanggotaan() {
         {loading ? (
           <div className="py-16 flex items-center justify-center gap-2 text-gray-400 text-sm">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Memuat data nasabah...</span>
+            <span>Memuat data anggota...</span>
           </div>
         ) : error ? (
           <div className="py-16 text-center text-red-400 text-sm">{error}</div>

@@ -231,7 +231,7 @@ function TambahPenggunaDrawer({ open, onClose, onAdded }) {
         }),
       })
       const pegJson = await pegRes.json()
-      if (!pegRes.ok) throw new Error(pegJson.message || 'Gagal membuat data pengguna')
+      if (!pegRes.ok) throw new Error(pegJson.message || 'Gagal membuat data pegawai')
 
       const roleRes = await authFetch(`/api/users/${userId}/roles`, {
         method: 'POST',
@@ -821,7 +821,7 @@ export default function Pengguna() {
     try {
       const res = await authFetch('/api/pegawai')
       const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Gagal mengambil data pengguna')
+      if (!res.ok) throw new Error(json.message || 'Gagal mengambil data pegawai')
       setUsers(json.data ?? [])
     } catch (err) {
       setError(err.message)

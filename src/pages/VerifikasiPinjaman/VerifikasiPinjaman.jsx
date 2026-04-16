@@ -635,7 +635,7 @@ export default function VerifikasiPinjaman({ onNavigate }) {
             <thead>
               <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-slate-400">
                 <th className="px-3 py-2">Anggota</th>
-                <th className="px-3 py-2">Jumlah Pencairan</th>
+                <th className="px-3 py-2">Jumlah Pinjaman</th>
                 <th className="px-3 py-2">Tenor</th>
                 <th className="px-3 py-2">Total Bunga</th>
                 <th className="px-3 py-2">Total Pengembalian</th>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   LayoutDashboard,
   DollarSign,
@@ -13,6 +13,28 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/context/AuthContext'
 
+function normalizeToken(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function canAccessMenu(menuId, permissions = []) {
+  const rules = {
+    beranda: ['dashboard.read'],
+    transaksi: ['transaksi.read', 'transaksi.process', 'simpanan.setor', 'simpanan.tarik', 'pinjaman.ajukan', 'pinjaman.angsuran', 'pinjaman.cairkan'],
+    laporan: ['laporan.read', 'laporan.generate', 'laporan.finalize'],
+    keanggotaan: ['nasabah.read', 'nasabah.create', 'nasabah.update', 'nasabah.verify'],
+    pengguna: ['pegawai.read', 'user.read'],
+    aktivitas: ['audit.read'],
+    pengaturan: ['settings.read', 'settings.update'],
+  }
+
+  const permissionSet = new Set((Array.isArray(permissions) ? permissions : []).map(normalizeToken))
+  if (permissionSet.size === 0) return false
+
+  const menuRules = rules[menuId] || []
+  return menuRules.some((item) => permissionSet.has(normalizeToken(item)))
+}
+
 const menuItems = [
   { id: 'beranda', label: 'Beranda', icon: LayoutDashboard },
   { id: 'transaksi', label: 'Transaksi', icon: DollarSign },
@@ -24,10 +46,15 @@ const menuItems = [
 ]
 
 export default function Sidebar({ activePage = 'beranda', onNavigate, isOpen = false, onClose, onLogout }) {
-  const { user } = useAuth()
+  const { user, permissions } = useAuth()
   const displayName = user?.username ?? 'Pegawai'
   const displayRole = user?.roles?.[0] ?? '-'
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+
+  const visibleMenuItems = useMemo(
+    () => menuItems.filter((item) => canAccessMenu(item.id, permissions)),
+    [permissions]
+  )
 
   const handleNavigate = (id) => {
     onNavigate?.(id)
@@ -69,7 +96,7 @@ export default function Sidebar({ activePage = 'beranda', onNavigate, isOpen = f
 
         {/* Navigation */}
         <nav className="flex-1 py-5 px-3 space-y-4">
-          {menuItems.map(({ id, label, icon }) => {
+          {visibleMenuItems.map(({ id, label, icon }) => {
             const MenuIcon = icon
             return (
               <button

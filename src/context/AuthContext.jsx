@@ -73,6 +73,20 @@ function hasContentTypeHeader(headers = {}) {
   return Object.keys(headers).some((key) => key.toLowerCase() === 'content-type')
 }
 
+function normalizeList(value) {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item) => {
+      if (typeof item === 'string') return item.trim()
+      if (item && typeof item === 'object') {
+        return String(item.name || item.code || item.id || '').trim()
+      }
+      return ''
+    })
+    .filter(Boolean)
+}
+
 export function AuthProvider({ children }) {
   const [authData, setAuthData] = useState(() => {
     const stored = loadFromStorage()
@@ -106,11 +120,13 @@ export function AuthProvider({ children }) {
    */
   const logout = useCallback(async () => {
     const token = loadFromStorage()?.accessToken
+    // Clear local auth immediately so UI can switch to login screen without waiting network.
+    clearStorage()
+    setAuthData(null)
+
     if (token) {
       try { await logoutUser(token) } catch { /* ignore network errors */ }
     }
-    clearStorage()
-    setAuthData(null)
   }, [])
 
   /**
@@ -284,6 +300,8 @@ export function AuthProvider({ children }) {
 
   const value = {
     user: authData?.user ?? null,
+    roles: normalizeList(authData?.user?.roles ?? authData?.roles),
+    permissions: normalizeList(authData?.user?.permissions ?? authData?.permissions),
     accessToken: authData?.accessToken ?? null,
     refreshToken: authData?.refreshToken ?? null,
     isAuthenticated: !!authData?.accessToken,

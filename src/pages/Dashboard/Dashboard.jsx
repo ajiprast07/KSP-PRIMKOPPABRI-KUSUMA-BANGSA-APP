@@ -236,7 +236,7 @@ export default function Dashboard() {
       const json = await res.json()
       if (!res.ok) {
         const message = Array.isArray(json?.message) ? json.message.join(', ') : json?.message
-        throw new Error(message || 'Gagal mengambil data dashboard')
+        throw new Error(message || 'Gagal mengambil data beranda')
       }
       const normalizedDashboard = json?.data ?? json?.result ?? json ?? null
       setDashboardData(normalizedDashboard)
@@ -362,13 +362,13 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Beranda</h1>
       </div>
 
       {loading && (
         <div className="bg-white rounded-xl p-8 shadow-sm flex items-center justify-center gap-2 text-gray-500 text-sm">
           <Loader2 className="w-5 h-5 animate-spin" />
-          <span>Memuat data dashboard...</span>
+          <span>Memuat data beranda...</span>
         </div>
       )}
 

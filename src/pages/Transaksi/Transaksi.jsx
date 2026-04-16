@@ -319,7 +319,7 @@ function toNasabahOption(item) {
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false)
   const [loanNasabahId, setLoanNasabahId] = useState('')
   const [loanAmount, setLoanAmount] = useState('')
-  const [loanTenor, setLoanTenor] = useState('1')
+  const [loanTenor, setLoanTenor] = useState('3')
   const [loanNasabahSearch, setLoanNasabahSearch] = useState('')
   const [loanSubmitting, setLoanSubmitting] = useState(false)
   const [loanError, setLoanError] = useState('')
@@ -403,7 +403,7 @@ function toNasabahOption(item) {
     return selectedMemberLoans.map((item, index) => ({
       ...item,
       installmentOrder: selectedMemberLoans.length - index,
-      label: `Pinjaman ke-${selectedMemberLoans.length - index}`,
+      label: `Pencairan ke-${selectedMemberLoans.length - index}`,
     }))
   }, [installmentLoanOptions, installmentNasabahId])
 
@@ -773,7 +773,7 @@ function toNasabahOption(item) {
     setLoanSubmitting(false)
     setLoanNasabahId('')
     setLoanAmount('')
-    setLoanTenor('1')
+    setLoanTenor('3')
     setLoanNasabahSearch('')
 
     try {
@@ -1000,8 +1000,8 @@ function toNasabahOption(item) {
       setLoanError('Jumlah pencairan harus lebih besar dari 0.')
       return
     }
-    if (!Number.isInteger(tenorBulan) || tenorBulan < 1 || tenorBulan > 12) {
-      setLoanError('Tenor bulan harus antara 1 sampai 12.')
+    if (!Number.isInteger(tenorBulan) || ![3, 6, 12].includes(tenorBulan)) {
+      setLoanError('Tenor bulan hanya bisa 3, 6, atau 12.')
       return
     }
 
@@ -2018,7 +2018,7 @@ function toNasabahOption(item) {
                   onChange={(e) => setLoanTenor(e.target.value)}
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {Array.from({ length: 12 }, (_, idx) => idx + 1).map((month) => (
+                  {[3, 6, 12].map((month) => (
                     <option key={month} value={String(month)}>{month} Bulan</option>
                   ))}
                 </select>
@@ -2106,7 +2106,7 @@ function toNasabahOption(item) {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-slate-700">Pinjaman Anggota</label>
+                <label className="text-sm font-medium text-slate-700">Pencairan Anggota</label>
                 <select
                   value={installmentPinjamanId}
                   onChange={(e) => setInstallmentPinjamanId(e.target.value)}
@@ -2126,13 +2126,13 @@ function toNasabahOption(item) {
                 {selectedInstallmentLoan && (
                   <div className="space-y-1 text-xs text-slate-600">
                     <p>
-                      Pinjaman dipilih milik: <span className="font-semibold text-slate-800">{selectedInstallmentLoan.nasabahName}</span>
+                      Pencairan dipilih milik: <span className="font-semibold text-slate-800">{selectedInstallmentLoan.nasabahName}</span>
                     </p>
                     <p>
-                      Nominal pinjaman: <span className="font-semibold text-slate-800">{formatCurrency(selectedInstallmentLoan.jumlahPinjaman)}</span>
+                      Nominal pencairan: <span className="font-semibold text-slate-800">{formatCurrency(selectedInstallmentLoan.jumlahPinjaman)}</span>
                     </p>
                     <p>
-                      Sisa pinjaman: <span className="font-semibold text-slate-800">{formatCurrency(selectedInstallmentLoan.sisaPinjaman)}</span>
+                      Sisa pencairan: <span className="font-semibold text-slate-800">{formatCurrency(selectedInstallmentLoan.sisaPinjaman)}</span>
                     </p>
                   </div>
                 )}
