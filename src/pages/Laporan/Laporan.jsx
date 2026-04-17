@@ -146,7 +146,7 @@ function buildPdfFromStatement(rows, filename, periodeText, leftLogoDataUrl, rig
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.setTextColor(15, 23, 42)
-    doc.text('KSP PRIMKOPPABRI KUSUMA BANGSA', pageRight / 2, 36, { align: 'center' })
+    doc.text('KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR', pageRight / 2, 36, { align: 'center' })
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(13)
@@ -237,7 +237,7 @@ function StatementTable({ periodeText, rows }) {
           </div>
 
           <div>
-          <p className="text-sm font-bold text-slate-900">KSP PRIMKOPPABRI KUSUMA BANGSA</p>
+          <p className="text-sm font-bold text-slate-900">KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR</p>
           <h3 className="text-lg font-bold text-slate-900">Rekapitulasi Operasional Bulanan</h3>
           <p className="mt-0.5 text-sm font-medium text-slate-600">Periode {periodeText}</p>
           </div>

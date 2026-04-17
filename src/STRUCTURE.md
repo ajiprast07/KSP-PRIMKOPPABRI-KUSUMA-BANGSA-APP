@@ -1,6 +1,6 @@
 # Project Structure
 
-Dokumentasi struktur folder aplikasi KSP PRIMKOPPABRI Kusuma Bangsa.
+Dokumentasi struktur folder aplikasi KSP PRIMKOPPABRI Kusuma Bangsa KCP GUMELAR.
 
 ## Struktur Saat Ini
 

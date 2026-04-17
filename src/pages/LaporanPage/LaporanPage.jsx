@@ -143,7 +143,7 @@ function buildPdfFromStatement(
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.setTextColor(15, 23, 42)
-    doc.text('KSP PRIMKOPPABRI KUSUMA BANGSA', pageRight / 2, 36, { align: 'center' })
+    doc.text('KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR', pageRight / 2, 36, { align: 'center' })
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(13)
@@ -231,7 +231,7 @@ function buildPdfFromStatement(
   doc.setTextColor(15, 23, 42)
   doc.text(`Banyumas, ${approvalDateText}`, approvalX, approvalStartY, { align: 'right' })
   doc.text('Yang Menyetujui', approvalX, approvalStartY + 22, { align: 'right' })
-  doc.text('Pimpinan KSP PRIMKOPPABRI KUSUMA BANGSA', approvalX, approvalStartY + 122, { align: 'right' })
+  doc.text('Pimpinan KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR', approvalX, approvalStartY + 122, { align: 'right' })
 
   if (isStamped && stampImageDataUrl) {
     const stampWidth = 95
@@ -255,7 +255,7 @@ function StatementTable({ periodeText, rows, approvalDateText, isStamped }) {
           </div>
 
           <div>
-          <p className="text-sm font-bold text-slate-900">KSP PRIMKOPPABRI KUSUMA BANGSA</p>
+          <p className="text-sm font-bold text-slate-900">KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR</p>
           <h3 className="text-lg font-bold text-slate-900">Laporan Operasional Bulanan</h3>
           <p className="mt-0.5 text-sm font-medium text-slate-600">Periode {periodeText}</p>
           </div>
@@ -299,7 +299,7 @@ function StatementTable({ periodeText, rows, approvalDateText, isStamped }) {
         <div className="ml-auto w-full max-w-[260px] text-right text-slate-900">
           <p className="text-sm">Banyumas, {approvalDateText}</p>
           <p className="mt-3 text-sm">Yang Menyetujui</p>
-          <p className="mt-24 text-sm">Pimpinan KSP PRIMKOPPABRI KUSUMA BANGSA</p>
+          <p className="mt-24 text-sm">Pimpinan KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR</p>
         </div>
         {isStamped && (
           <img

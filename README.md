@@ -1,4 +1,4 @@
-# KSP PRIMKOPPABRI Kusuma Bangsa Web App
+# KSP PRIMKOPPABRI Kusuma Bangsa KCP GUMELAR Web App
 
 Aplikasi web internal koperasi untuk pengelolaan dashboard, anggota, transaksi, verifikasi pinjaman, dan laporan.
 

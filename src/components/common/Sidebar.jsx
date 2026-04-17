@@ -85,6 +85,8 @@ export default function Sidebar({ activePage = 'beranda', onNavigate, isOpen = f
             KSP PRIMKOPPABRI
             <br />
             KUSUMA BANGSA
+            <br />
+            KCP GUMELAR
           </h1>
           <button
             onClick={onClose}

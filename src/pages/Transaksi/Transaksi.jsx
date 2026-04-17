@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/AuthContext'
 
 const PAGE_LIMIT = 20
+const ALL_DATA_LIMIT = 100
 const INCOMING_TYPES = new Set(['SETORAN', 'ANGSURAN'])
 const OUTGOING_TYPES = new Set(['PENARIKAN', 'PINJAMAN'])
 const TRANSACTION_TYPE_OPTIONS = [
@@ -260,10 +261,7 @@ export default function Transaksi({ onNavigate }) {
 
   // ─── paginated data store ─────────────────────────────────────────────────
   const [transactions, setTransactions] = useState([])
-  const [cursorAfter, setCursorAfter] = useState('')
-  const [cursorBefore, setCursorBefore] = useState('')
   const [pageIndex, setPageIndex] = useState(1)
-  const [hasNextPage, setHasNextPage] = useState(false)
   const [actionMenuOpenId, setActionMenuOpenId] = useState('')
   const [pendingVerificationCount, setPendingVerificationCount] = useState(0)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
@@ -536,64 +534,83 @@ function toNasabahOption(item) {
     }
   }, [authFetch])
 
-  const fetchTransactionsPage = useCallback(async () => {
+  const fetchAllTransactions = useCallback(async () => {
     setLoading(true)
     setError('')
 
     try {
-      const params = new URLSearchParams({ limit: String(PAGE_LIMIT) })
-      if (cursorAfter) params.set('after', cursorAfter)
-      if (cursorBefore) params.set('before', cursorBefore)
+      const baseParams = new URLSearchParams({ limit: String(ALL_DATA_LIMIT) })
 
       if (typeFilter !== 'ALL') {
         const apiType = typeFilter === 'PINJAMAN' ? 'PENCAIRAN' : typeFilter
-        params.set('jenisTransaksi', apiType)
+        baseParams.set('jenisTransaksi', apiType)
       }
 
       if (filterSpecificDate) {
-        params.set('tanggalFrom', `${filterSpecificDate}T00:00:00`)
-        params.set('tanggalTo', `${filterSpecificDate}T23:59:59.999`)
+        baseParams.set('tanggalFrom', `${filterSpecificDate}T00:00:00`)
+        baseParams.set('tanggalTo', `${filterSpecificDate}T23:59:59.999`)
       } else {
-        if (filterDateFrom) params.set('tanggalFrom', `${filterDateFrom}T00:00:00`)
-        if (filterDateTo) params.set('tanggalTo', `${filterDateTo}T23:59:59.999`)
+        if (filterDateFrom) baseParams.set('tanggalFrom', `${filterDateFrom}T00:00:00`)
+        if (filterDateTo) baseParams.set('tanggalTo', `${filterDateTo}T23:59:59.999`)
       }
 
-      const query = params.toString()
-      const endpoint = query ? `/api/transaksi?${query}` : '/api/transaksi'
+      const { newNasabahMap, newPegawaiMap, newPinjamanMap } = await fetchLookups()
 
-      const [res, { newNasabahMap, newPegawaiMap, newPinjamanMap }] = await Promise.all([
-        authFetch(endpoint),
-        fetchLookups(),
-      ])
+      let after = null
+      let guard = 0
+      const visitedCursor = new Set()
+      const mergedRows = []
 
-      const json = await res.json().catch(() => null)
-      if (!res.ok) {
-        throw new Error(json?.message || 'Gagal mengambil data transaksi')
+      while (guard < 500) {
+        const params = new URLSearchParams(baseParams)
+        if (after !== null && after !== undefined && after !== '') {
+          params.set('after', String(after))
+        }
+
+        const query = params.toString()
+        const endpoint = query ? `/api/transaksi?${query}` : '/api/transaksi'
+
+        const res = await authFetch(endpoint)
+        const json = await res.json().catch(() => null)
+
+        if (!res.ok) {
+          throw new Error(json?.message || 'Gagal mengambil data transaksi')
+        }
+
+        const rows = toArray(json?.data ?? json)
+        mergedRows.push(...rows)
+
+        const pg = json?.pagination ?? {}
+        const hasNext = Boolean(pg?.hasNext ?? pg?.has_next)
+        const nextCursor = pg?.nextCursor ?? pg?.next_cursor
+
+        if (!hasNext || nextCursor === null || nextCursor === undefined || nextCursor === '') {
+          break
+        }
+        if (visitedCursor.has(String(nextCursor))) {
+          break
+        }
+
+        visitedCursor.add(String(nextCursor))
+        after = nextCursor
+        guard += 1
       }
 
-      const rows = toArray(json?.data ?? json)
-      const pg = json?.pagination ?? {}
-      const apiHasNext = pg?.hasNext ?? pg?.has_next
-      const resolvedHasNext =
-        typeof apiHasNext === 'boolean'
-          ? apiHasNext
-          : rows.length >= PAGE_LIMIT
+      const uniqueRows = Array.from(
+        new Map(mergedRows.map((item) => [String(item?.id ?? Math.random()), item])).values()
+      )
 
-      const enrichedRows = enrichTransactions(rows, newNasabahMap, newPegawaiMap, newPinjamanMap)
+      const enrichedRows = enrichTransactions(uniqueRows, newNasabahMap, newPegawaiMap, newPinjamanMap)
       setTransactions(enrichedRows)
-      setHasNextPage(Boolean(resolvedHasNext))
     } catch (err) {
       setError(err?.message || 'Terjadi kesalahan saat mengambil transaksi')
       setTransactions([])
-      setHasNextPage(false)
     } finally {
       setLoading(false)
     }
   }, [
     authFetch,
     fetchLookups,
-    cursorAfter,
-    cursorBefore,
     typeFilter,
     filterSpecificDate,
     filterDateFrom,
@@ -601,31 +618,22 @@ function toNasabahOption(item) {
   ])
 
   const goToNextPage = useCallback(() => {
-    if (!hasNextPage || transactions.length === 0) return
-    const lastId = transactions[transactions.length - 1]?.id
-    if (!lastId) return
-    setCursorAfter(String(lastId))
-    setCursorBefore('')
     setPageIndex((prev) => prev + 1)
     setActionMenuOpenId('')
-  }, [hasNextPage, transactions])
+  }, [])
 
   const goToPrevPage = useCallback(() => {
-    if (pageIndex <= 1 || transactions.length === 0) return
-    const firstId = transactions[0]?.id
-    if (!firstId) return
-    setCursorBefore(String(firstId))
-    setCursorAfter('')
+    if (pageIndex <= 1) return
     setPageIndex((prev) => Math.max(1, prev - 1))
     setActionMenuOpenId('')
-  }, [pageIndex, transactions])
+  }, [pageIndex])
 
   // ─────────────────────────────────────────────────────────────────────────
   // Initial fetch / refresh
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    fetchTransactionsPage()
-  }, [fetchTransactionsPage, dataVersion])
+    fetchAllTransactions()
+  }, [fetchAllTransactions, dataVersion])
 
   useEffect(() => {
     fetchPendingVerificationCount()
@@ -759,13 +767,13 @@ function toNasabahOption(item) {
 
       setActionSuccess(json?.message || 'Transaksi berhasil dihapus')
       setDeleteTarget(null)
-      await fetchTransactionsPage()
+      await fetchAllTransactions()
     } catch (err) {
       setError(err?.message || 'Terjadi kesalahan saat menghapus transaksi')
     } finally {
       setDeleteSubmitting(false)
     }
-  }, [authFetch, deleteTarget?.id, fetchTransactionsPage])
+  }, [authFetch, deleteTarget?.id, fetchAllTransactions])
 
   const openLoanModal = useCallback(async () => {
     setLoanError('')
@@ -1021,14 +1029,14 @@ function toNasabahOption(item) {
 
       setLoanSuccess(json?.message || 'Pengajuan pencairan berhasil dibuat')
       setIsLoanModalOpen(false)
-      await fetchTransactionsPage()
+      await fetchAllTransactions()
       await fetchPendingVerificationCount()
     } catch (err) {
       setLoanError(err?.message || 'Terjadi kesalahan saat membuat pencairan')
     } finally {
       setLoanSubmitting(false)
     }
-  }, [authFetch, loanNasabahId, loanAmount, loanTenor, fetchTransactionsPage, fetchPendingVerificationCount])
+  }, [authFetch, loanNasabahId, loanAmount, loanTenor, fetchAllTransactions, fetchPendingVerificationCount])
 
   const submitInstallment = useCallback(async () => {
     const pinjamanId = Number(installmentPinjamanId)
@@ -1063,7 +1071,7 @@ function toNasabahOption(item) {
 
       setInstallmentSuccess(json?.message || 'Transaksi berhasil diproses')
       setIsInstallmentModalOpen(false)
-      await fetchTransactionsPage()
+      await fetchAllTransactions()
     } catch (err) {
       setInstallmentError(err?.message || 'Terjadi kesalahan saat membuat angsuran')
     } finally {
@@ -1075,7 +1083,7 @@ function toNasabahOption(item) {
     installmentAmount,
     installmentMethod,
     installmentNote,
-    fetchTransactionsPage,
+    fetchAllTransactions,
   ])
 
   useEffect(() => {
@@ -1163,13 +1171,13 @@ function toNasabahOption(item) {
 
       setSavingsSuccess(json?.message || 'Transaksi berhasil diproses')
       setIsSavingsModalOpen(false)
-      await fetchTransactionsPage()
+      await fetchAllTransactions()
     } catch (err) {
       setSavingsError(err?.message || 'Terjadi kesalahan saat membuat setoran')
     } finally {
       setSavingsSubmitting(false)
     }
-  }, [authFetch, savingsRekeningId, savingsAmount, savingsMethod, savingsNote, fetchTransactionsPage])
+  }, [authFetch, savingsRekeningId, savingsAmount, savingsMethod, savingsNote, fetchAllTransactions])
 
   useEffect(() => {
     if (!isWithdrawalModalOpen || !withdrawalNasabahId) {
@@ -1270,7 +1278,7 @@ function toNasabahOption(item) {
 
       setWithdrawalSuccess(json?.message || 'Transaksi berhasil diproses')
       setIsWithdrawalModalOpen(false)
-      await fetchTransactionsPage()
+      await fetchAllTransactions()
     } catch (err) {
       setWithdrawalError(err?.message || 'Terjadi kesalahan saat membuat penarikan')
     } finally {
@@ -1284,7 +1292,7 @@ function toNasabahOption(item) {
     withdrawalAmount,
     withdrawalMethod,
     withdrawalNote,
-    fetchTransactionsPage,
+    fetchAllTransactions,
   ])
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1315,8 +1323,6 @@ function toNasabahOption(item) {
       setFilterDateFrom(draftDateFrom)
       setFilterDateTo(draftDateTo)
     }
-    setCursorAfter('')
-    setCursorBefore('')
     setPageIndex(1)
     setFilterError('')
     setIsFilterModalOpen(false)
@@ -1359,10 +1365,7 @@ function toNasabahOption(item) {
       const haystack = [
         resolveNasabahName(tx),
         resolvePegawaiName(tx),
-        tx?.rekeningSimpananId,
-        tx?.jenisTransaksi,
-        tx?.metodePembayaran,
-        getStatusMeta(tx).label,
+        mapMethodLabel(tx?.metodePembayaran),
       ]
         .map((item) => String(item ?? '').toLowerCase())
         .join(' ')
@@ -1375,6 +1378,21 @@ function toNasabahOption(item) {
     typeFilter,
     methodFilter,
   ])
+
+  useEffect(() => {
+    setPageIndex(1)
+  }, [search, typeFilter, methodFilter, filterSpecificDate, filterDateFrom, filterDateTo])
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredTransactions.length / PAGE_LIMIT)),
+    [filteredTransactions.length]
+  )
+
+  const paginatedTransactions = useMemo(() => {
+    const start = (pageIndex - 1) * PAGE_LIMIT
+    const end = start + PAGE_LIMIT
+    return filteredTransactions.slice(start, end)
+  }, [filteredTransactions, pageIndex])
 
   const summary = useMemo(() => computeSummary(filteredTransactions), [filteredTransactions])
 
@@ -1460,7 +1478,7 @@ function toNasabahOption(item) {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
                 className="h-10 pl-9"
-                placeholder="Cari anggota, pegawai, jenis, metode"
+                placeholder="Cari anggota, pegawai, metode"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -1543,7 +1561,7 @@ function toNasabahOption(item) {
                   <td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">Tidak ada data transaksi.</td>
                 </tr>
               ) : (
-                filteredTransactions.map((row) => (
+                paginatedTransactions.map((row) => (
                   <tr key={row.id} className="border-t border-slate-100 text-slate-700">
                     <td className="px-3 py-3 align-top">
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${flowBadgeClass(row.jenisTransaksi)}`}>
@@ -1605,7 +1623,7 @@ function toNasabahOption(item) {
           ) : filteredTransactions.length === 0 ? (
             <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">Tidak ada data transaksi.</div>
           ) : (
-            filteredTransactions.map((row) => (
+            paginatedTransactions.map((row) => (
               <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
                 <div className="mb-2 flex items-start justify-between gap-2">
                   <div>
@@ -1673,7 +1691,7 @@ function toNasabahOption(item) {
               variant="outline"
               className="h-8 px-3 text-xs"
               onClick={goToNextPage}
-              disabled={loading || !hasNextPage}
+              disabled={loading || pageIndex >= totalPages}
             >
               Berikutnya
             </Button>

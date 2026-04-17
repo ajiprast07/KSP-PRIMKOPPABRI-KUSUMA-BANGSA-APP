@@ -28,7 +28,7 @@ export default function DashboardLayout({ children, activePage, onNavigate, onLo
           >
             <Menu className="w-5 h-5" />
           </button>
-          <span className="text-[#0066FF] font-bold text-sm">KSP PRIMKOPPABRI KUSUMA BANGSA</span>
+          <span className="text-[#0066FF] font-bold text-sm">KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR</span>
         </header>
 
         <main className="flex-1 p-4 lg:p-6">

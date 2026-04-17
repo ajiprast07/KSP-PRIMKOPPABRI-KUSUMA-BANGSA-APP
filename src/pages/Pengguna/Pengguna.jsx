@@ -59,6 +59,7 @@ const ROLE_ID_LABELS = {
   3: 'Staff',
   4: 'Pimpinan',
 }
+const PAGE_LIMIT = 20
 
 const emptyStep1 = { username: '', email: '', password: '', konfirmasiPassword: '' }
 const emptyStep2 = { namaLengkap: '', jabatan: '', noHp: '', alamat: '', role: '' }
@@ -809,6 +810,7 @@ export default function Pengguna() {
   const toast = useToast()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('semua')
+  const [pageIndex, setPageIndex] = useState(1)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [userToDetail, setUserToDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -844,6 +846,28 @@ export default function Pengguna() {
       (statusFilter === 'nonaktif' && !aktif)
     return matchSearch && matchStatus
   })
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_LIMIT))
+  const visiblePage = Math.min(pageIndex, totalPages)
+  const paginatedUsers = filtered.slice((visiblePage - 1) * PAGE_LIMIT, visiblePage * PAGE_LIMIT)
+
+  useEffect(() => {
+    setPageIndex(1)
+  }, [search, statusFilter])
+
+  useEffect(() => {
+    if (pageIndex > totalPages) {
+      setPageIndex(totalPages)
+    }
+  }, [pageIndex, totalPages])
+
+  const goToNextPage = useCallback(() => {
+    setPageIndex((prev) => Math.min(totalPages, prev + 1))
+  }, [totalPages])
+
+  const goToPrevPage = useCallback(() => {
+    setPageIndex((prev) => Math.max(1, prev - 1))
+  }, [])
 
   const handleAdded = () => {
     toast.success('Pegawai berhasil ditambahkan')
@@ -1014,16 +1038,44 @@ export default function Pengguna() {
             Tidak ada pegawai ditemukan.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filtered.map((user) => (
-              <UserCard
-                key={user.id}
-                user={user}
-                onDetail={handleOpenDetail}
-                onEdit={setUserToEdit}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {paginatedUsers.map((user) => (
+                <UserCard
+                  key={user.id}
+                  user={user}
+                  onDetail={handleOpenDetail}
+                  onEdit={setUserToEdit}
+                />
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-gray-500">
+                Halaman <span className="font-semibold text-gray-700">{visiblePage}</span>
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-3 text-xs"
+                  onClick={goToPrevPage}
+                  disabled={loading || visiblePage <= 1}
+                >
+                  Sebelumnya
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-3 text-xs"
+                  onClick={goToNextPage}
+                  disabled={loading || visiblePage >= totalPages}
+                >
+                  Berikutnya
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

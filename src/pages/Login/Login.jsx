@@ -53,6 +53,8 @@ export default function Login({ onLoginSuccess }) {
             KSP PRIMKOPPABRI
             <br />
             KUSUMA BANGSA
+            <br />
+            KCP GUMELAR
           </h1>
         </div>
       </div>
@@ -64,7 +66,7 @@ export default function Login({ onLoginSuccess }) {
           <div className="space-y-4">
             <h2 className="text-3xl lg:text-4xl font-bold text-gray-900 text-center">Login</h2>
             <p className="text-gray-600 text-center">
-              <span className="font-semibold">Hallo!</span> Selamat datang di KSP PRIMKOPPABRI Kusuma Bangsa
+              <span className="font-semibold">Hallo!</span> Selamat datang di KSP PRIMKOPPABRI Kusuma Bangsa KCP Gumelar. Silakan masuk menggunakan akun Anda.
             </p>
           </div>
 
