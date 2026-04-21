@@ -37,6 +37,23 @@ npm run lint
 
 Default dev server berjalan di http://localhost:5173.
 
+## Konfigurasi Environment
+
+Salin `.env.example` menjadi `.env` untuk local development:
+
+```bash
+# macOS/Linux/Git Bash
+cp .env.example .env
+
+# PowerShell
+Copy-Item .env.example .env
+```
+
+Variabel yang digunakan:
+
+- `VITE_API_BASE_URL`: base URL API di browser. Default `/api`.
+- `VITE_API_PROXY_TARGET`: target API backend untuk proxy Vite saat `npm run dev`.
+
 ## Tech Stack
 
 - React 19
@@ -133,3 +150,18 @@ import { cn } from '@/lib/utils'
 - src/STRUCTURE.md
 - https://tailwindcss.com
 - https://ui.shadcn.com
+
+## Deploy Ke Vercel
+
+Project ini sudah disiapkan untuk Vercel dengan file `vercel.json`:
+
+- Rewrite `/api/*` ke `https://kspprimkoppabri.app/api/*` (menggantikan proxy Vite saat production).
+- Rewrite semua route lain ke `index.html` untuk mendukung SPA fallback.
+
+Langkah deploy:
+
+1. Push project ke repository Git (GitHub/GitLab/Bitbucket).
+2. Import repository ke Vercel.
+3. Pastikan setting build terdeteksi otomatis (Framework: Vite, Build Command: `npm run build`, Output: `dist`).
+4. (Opsional) Atur Environment Variable `VITE_API_BASE_URL` jika ingin override default `/api`.
+5. Deploy.
