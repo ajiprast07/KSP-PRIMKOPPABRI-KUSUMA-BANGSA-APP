@@ -80,6 +80,58 @@ function toArray(data) {
   return []
 }
 
+function resolveLoanFromCreateResponse(responseJson) {
+  const candidates = [
+    responseJson?.data,
+    responseJson?.pinjaman,
+    responseJson?.loan,
+    responseJson?.result,
+    responseJson,
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+
+    if (Array.isArray(candidate)) {
+      const firstLoanLike = candidate.find((item) => item && typeof item === 'object' && (item.id !== undefined || item.pinjamanId !== undefined || item.loanId !== undefined))
+      if (firstLoanLike) return firstLoanLike
+      continue
+    }
+
+    if (typeof candidate === 'object') {
+      if (candidate.pinjaman && typeof candidate.pinjaman === 'object') return candidate.pinjaman
+      if (candidate.loan && typeof candidate.loan === 'object') return candidate.loan
+      if (candidate.id !== undefined || candidate.pinjamanId !== undefined || candidate.loanId !== undefined || candidate.status !== undefined) {
+        return candidate
+      }
+    }
+  }
+
+  return null
+}
+
+function resolveLoanId(loan) {
+  return Number(
+    loan?.id ??
+    loan?.pinjamanId ??
+    loan?.pinjaman_id ??
+    loan?.loanId ??
+    loan?.loan_id ??
+    0
+  )
+}
+
+function resolveLoanStatus(loan, responseJson) {
+  return String(
+    loan?.status ??
+    loan?.pinjamanStatus ??
+    loan?.loanStatus ??
+    responseJson?.status ??
+    responseJson?.pinjamanStatus ??
+    ''
+  ).toUpperCase()
+}
+
 function toNameMap(list, nameKeys = []) {
   return list.reduce((acc, item) => {
     const id = item?.id
@@ -1027,7 +1079,37 @@ function toNasabahOption(item) {
         throw new Error(json?.message || 'Gagal menambahkan pencairan')
       }
 
-      setLoanSuccess(json?.message || 'Pengajuan pencairan berhasil dibuat')
+      const createdLoan = resolveLoanFromCreateResponse(json)
+      const createdLoanId = resolveLoanId(createdLoan)
+      const createdLoanStatus = resolveLoanStatus(createdLoan, json)
+
+      let successMessage = json?.message || 'Pengajuan pencairan berhasil dibuat'
+
+      if (isApprovedLoanStatus(createdLoanStatus)) {
+        if (!Number.isInteger(createdLoanId) || createdLoanId <= 0) {
+          throw new Error('Pengajuan berhasil, tetapi pencairan otomatis gagal karena ID pinjaman tidak ditemukan.')
+        }
+
+        const pencairanRes = await authFetch(`/api/pinjaman/${createdLoanId}/pencairan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            metodePembayaran: 'TRANSFER',
+            catatan: 'Pencairan otomatis dari menu tambah pencairan (auto approval).',
+          }),
+        })
+        const pencairanJson = await pencairanRes.json().catch(() => null)
+
+        if (!pencairanRes.ok) {
+          throw new Error(
+            `Pengajuan berhasil, tetapi pencairan otomatis gagal: ${pencairanJson?.message || 'Gagal memproses pencairan pinjaman'}`
+          )
+        }
+
+        successMessage = pencairanJson?.message || 'Pencairan otomatis berhasil diproses'
+      }
+
+      setLoanSuccess(successMessage)
       setIsLoanModalOpen(false)
       await fetchAllTransactions()
       await fetchPendingVerificationCount()
