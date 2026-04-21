@@ -82,7 +82,7 @@ src/
    lib/
       utils.js
    pages/
-      Aktivitas/
+      Audit/
       Dashboard/
       Keanggotaan/
       Laporan/
@@ -103,7 +103,7 @@ Dokumentasi struktur tambahan tersedia di src/STRUCTURE.md.
 - Login
 - Dashboard
 - Pengguna
-- Aktivitas
+- Audit
 - Transaksi
 - Verifikasi Pinjaman
 - Laporan

@@ -35,7 +35,7 @@ src/
     utils.js
 
   pages/
-    Aktivitas/
+    Audit/
     Dashboard/
     Keanggotaan/
     Laporan/

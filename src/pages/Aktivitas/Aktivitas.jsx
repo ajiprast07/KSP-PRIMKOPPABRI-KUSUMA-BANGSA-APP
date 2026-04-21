@@ -6,12 +6,34 @@ import { useAuth } from '@/context/AuthContext'
 
 const ALL_DATA_LIMIT = 100
 
-const ACTION_FILTER_OPTIONS = [
+const BASE_ACTION_FILTER_OPTIONS = [
   { value: 'semua', label: 'Semua Aksi' },
-  { value: 'LOGIN', label: 'LOGIN' },
-  { value: 'LOGOUT', label: 'LOGOUT' },
-  { value: 'CREATE', label: 'CREATE' },
-  { value: 'UPDATE', label: 'UPDATE' },
+  { value: 'LOGIN', label: 'Masuk Sistem' },
+  { value: 'LOGOUT', label: 'Keluar Sistem' },
+  { value: 'CREATE', label: 'Tambah Data' },
+  { value: 'UPDATE', label: 'Ubah Data' },
+  { value: 'DELETE', label: 'Hapus Data' },
+]
+
+const ACTION_CLASS_MAP = {
+  CREATE: 'bg-emerald-100 text-emerald-700',
+  UPDATE: 'bg-amber-100 text-amber-700',
+  DELETE: 'bg-rose-100 text-rose-700',
+  LOGIN: 'bg-blue-100 text-blue-700',
+  LOGOUT: 'bg-slate-200 text-slate-700',
+  VERIFY: 'bg-indigo-100 text-indigo-700',
+  APPROVE: 'bg-teal-100 text-teal-700',
+  REJECT: 'bg-red-100 text-red-700',
+  EXPORT: 'bg-cyan-100 text-cyan-700',
+  IMPORT: 'bg-lime-100 text-lime-700',
+}
+
+const ACTION_FALLBACK_CLASSES = [
+  'bg-sky-100 text-sky-700',
+  'bg-fuchsia-100 text-fuchsia-700',
+  'bg-orange-100 text-orange-700',
+  'bg-violet-100 text-violet-700',
+  'bg-stone-200 text-stone-700',
 ]
 
 function normalizeMessage(message, fallback) {
@@ -59,11 +81,34 @@ function getJakartaDateKey(dateValue) {
 
 function getActionClasses(action) {
   const label = String(action ?? '').toUpperCase()
-  if (label === 'CREATE') return 'bg-emerald-100 text-emerald-700'
-  if (label === 'UPDATE') return 'bg-amber-100 text-amber-700'
-  if (label === 'LOGIN') return 'bg-blue-100 text-blue-700'
-  if (label === 'LOGOUT') return 'bg-gray-200 text-gray-700'
-  return 'bg-gray-100 text-gray-600'
+  if (!label) return 'bg-gray-100 text-gray-600'
+  if (ACTION_CLASS_MAP[label]) return ACTION_CLASS_MAP[label]
+
+  const hash = Array.from(label).reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return ACTION_FALLBACK_CLASSES[hash % ACTION_FALLBACK_CLASSES.length]
+}
+
+function getActionLabel(action) {
+  const value = String(action ?? '').toUpperCase()
+  if (!value) return '-'
+
+  if (value === 'LOGIN') return 'Masuk Sistem'
+  if (value === 'LOGOUT') return 'Keluar Sistem'
+  if (value === 'CREATE') return 'Tambah Data'
+  if (value === 'UPDATE') return 'Ubah Data'
+  if (value === 'DELETE') return 'Hapus Data'
+  if (value === 'VERIFY') return 'Verifikasi Data'
+  if (value === 'APPROVE') return 'Setujui Data'
+  if (value === 'REJECT') return 'Tolak Data'
+  if (value === 'EXPORT') return 'Ekspor Data'
+  if (value === 'IMPORT') return 'Impor Data'
+
+  return value
+    .toLowerCase()
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 function JsonPanel({ title, value }) {
@@ -106,7 +151,7 @@ function DetailModal({ open, onClose, loading, error, detail }) {
       <div className="relative w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-t-2xl bg-white shadow-xl border border-gray-100 sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Detail Aktivitas</h2>
+            <h2 className="text-lg font-bold text-gray-900">Detail Audit</h2>
           </div>
           <button
             type="button"
@@ -134,7 +179,7 @@ function DetailModal({ open, onClose, loading, error, detail }) {
           ) : error ? (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
           ) : !detail ? (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">Detail aktivitas tidak ditemukan.</div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">Detail audit tidak ditemukan.</div>
           ) : (
             <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -149,12 +194,8 @@ function DetailModal({ open, onClose, loading, error, detail }) {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Aksi</p>
                   <span className={`mt-1 inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold ${getActionClasses(detail.action)}`}>
-                    {String(detail.action ?? '-').toUpperCase()}
+                    {getActionLabel(detail.action)}
                   </span>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Entitas</p>
-                  <p className="mt-1 text-gray-800">{detail.entityName ?? '-'} {detail.entityId != null ? `#${detail.entityId}` : ''}</p>
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">User ID</p>
@@ -167,8 +208,8 @@ function DetailModal({ open, onClose, loading, error, detail }) {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <JsonPanel title="Old Value" value={detail.oldValue} />
-                <JsonPanel title="New Value" value={detail.newValue} />
+                <JsonPanel title="Data Sebelum" value={detail.oldValue} />
+                <JsonPanel title="Data Sesudah" value={detail.newValue} />
               </div>
             </div>
           )}
@@ -293,6 +334,23 @@ export default function Aktivitas() {
     return isFilteredView ? allAuditTrails : auditTrails
   }, [isFilteredView, allAuditTrails, auditTrails])
 
+  const actionFilterOptions = useMemo(() => {
+    const knownValues = new Set(BASE_ACTION_FILTER_OPTIONS.map((item) => item.value))
+
+    const dynamicActions = Array.from(
+      new Set(
+        [...auditTrails, ...allAuditTrails]
+          .map((item) => String(item?.action ?? '').toUpperCase())
+          .filter(Boolean)
+      )
+    )
+      .filter((action) => !knownValues.has(action))
+      .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
+      .map((action) => ({ value: action, label: getActionLabel(action) }))
+
+    return [...BASE_ACTION_FILTER_OPTIONS, ...dynamicActions]
+  }, [auditTrails, allAuditTrails])
+
   useEffect(() => {
     if (isFilteredView) {
       fetchAllAuditTrails()
@@ -392,6 +450,9 @@ export default function Aktivitas() {
     setDraftActionFilter(actionFilter)
     setDraftSelectedDate(selectedDate)
     setShowFilterModal(true)
+
+    // Ambil variasi aksi lintas halaman agar opsi filter lebih lengkap.
+    fetchAllAuditTrails({ silent: true })
   }
 
   const applyFilterModal = () => {
@@ -421,7 +482,7 @@ export default function Aktivitas() {
           <div className="relative w-full max-w-lg max-h-[90vh] overflow-hidden rounded-t-2xl border border-gray-100 bg-white shadow-xl sm:rounded-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
               <div>
-                <h2 className="text-base font-bold text-gray-900">Filter Aktivitas</h2>
+                <h2 className="text-base font-bold text-gray-900">Filter Audit</h2>
                 <p className="text-xs text-gray-500 mt-0.5">Atur filter tanggal dan aksi</p>
               </div>
               <button
@@ -436,7 +497,7 @@ export default function Aktivitas() {
             <div className="px-4 py-4 sm:px-5 space-y-4 overflow-auto max-h-[calc(90vh-130px)]">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Tanggal Aktivitas</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Tanggal Audit</label>
                   <Input
                     type="date"
                     value={draftSelectedDate}
@@ -453,7 +514,7 @@ export default function Aktivitas() {
                   onChange={(event) => setDraftActionFilter(event.target.value)}
                   className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0066FF] focus:ring-offset-2"
                 >
-                  {ACTION_FILTER_OPTIONS.map((option) => (
+                  {actionFilterOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
@@ -488,7 +549,7 @@ export default function Aktivitas() {
       ) : null}
 
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Aktivitas</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Audit</h1>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 sm:p-5 space-y-4">
@@ -499,7 +560,7 @@ export default function Aktivitas() {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Cari aksi, entitas, user, IP..."
+                placeholder="Cari pengguna, IP..."
                 className="pl-9 h-10"
               />
             </div>
@@ -525,7 +586,7 @@ export default function Aktivitas() {
         ) : error ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         ) : filteredRows.length === 0 ? (
-          <div className="py-14 text-center text-sm text-gray-500">Tidak ada data aktivitas yang sesuai.</div>
+          <div className="py-14 text-center text-sm text-gray-500">Tidak ada data audit yang sesuai.</div>
         ) : (
           <>
             <div className="hidden lg:block overflow-x-auto rounded-xl border border-gray-200">
@@ -534,7 +595,6 @@ export default function Aktivitas() {
                   <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
                     <th className="px-3 py-3 font-semibold">Waktu</th>
                     <th className="px-3 py-3 font-semibold">Aksi</th>
-                    <th className="px-3 py-3 font-semibold">Entitas</th>
                     <th className="px-3 py-3 font-semibold">Pengguna</th>
                     <th className="px-3 py-3 font-semibold">IP Address</th>
                   </tr>
@@ -553,15 +613,14 @@ export default function Aktivitas() {
                       }}
                       role="button"
                       tabIndex={0}
-                      aria-label={`Lihat detail aktivitas ${item.id}`}
+                      aria-label={`Lihat detail audit ${item.id}`}
                     >
                       <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatJakartaDate(item.createdAt)}</td>
                       <td className="px-3 py-3">
                         <span className={`inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold ${getActionClasses(item.action)}`}>
-                          {String(item.action ?? '-').toUpperCase()}
+                          {getActionLabel(item.action)}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-gray-700">{item.entityName ?? '-'} {item.entityId != null ? `#${item.entityId}` : ''}</td>
                       <td className="px-3 py-3 text-gray-700">
                         <div className="font-medium">{item.user?.username ?? '-'}</div>
                         <div className="text-xs text-gray-500">{item.user?.email ?? '-'}</div>
@@ -587,15 +646,15 @@ export default function Aktivitas() {
                   }}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Lihat detail aktivitas ${item.id}`}
+                  aria-label={`Lihat detail audit ${item.id}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">{item.entityName ?? '-'} {item.entityId != null ? `#${item.entityId}` : ''}</p>
+                      <p className="text-sm font-semibold text-gray-900">Audit Aktivitas</p>
                       <p className="text-xs text-gray-500 mt-0.5">{formatJakartaDate(item.createdAt)}</p>
                     </div>
                     <span className={`inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold ${getActionClasses(item.action)}`}>
-                      {String(item.action ?? '-').toUpperCase()}
+                      {getActionLabel(item.action)}
                     </span>
                   </div>
 

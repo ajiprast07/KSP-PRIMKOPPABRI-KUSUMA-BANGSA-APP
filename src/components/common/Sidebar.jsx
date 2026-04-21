@@ -41,7 +41,7 @@ const menuItems = [
   { id: 'laporan', label: 'Laporan', icon: BarChart2 },
   { id: 'keanggotaan', label: 'Keanggotaan', icon: Users },
   { id: 'pengguna', label: 'Pegawai', icon: User },
-  { id: 'aktivitas', label: 'Aktivitas', icon: Activity },
+  { id: 'aktivitas', label: 'Audit', icon: Activity },
   { id: 'pengaturan', label: 'Pengaturan', icon: Settings },
 ]
 
