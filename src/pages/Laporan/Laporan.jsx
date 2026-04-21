@@ -133,7 +133,7 @@ function buildPdfFromStatement(rows, filename, periodeText, leftLogoDataUrl, rig
   const pageHeight = doc.internal.pageSize.getHeight()
   const maxY = pageHeight - 52
   const contentWidth = pageRight - left - right
-  const splitX = left + Math.floor(contentWidth * 0.68)
+  const splitX = left + Math.floor(contentWidth * 0.75)
 
   const drawHeader = () => {
     if (leftLogoDataUrl) {
@@ -251,8 +251,8 @@ function StatementTable({ periodeText, rows }) {
       <div className="overflow-x-auto">
         <table className="min-w-full table-fixed text-sm">
           <colgroup>
-            <col className="w-[68%]" />
-            <col className="w-[32%]" />
+            <col className="w-[75%]" />
+            <col className="w-[25%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-300 bg-slate-200 text-slate-700">
@@ -314,7 +314,7 @@ function mapStatementRows(reports) {
     { type: 'item', label: '5.3 - Rasio Keaktifan (Jumlah Anggota Aktif ÷ Total Anggota × 100%)', value: formatPercent(reports?.rasio?.rasioKeaktifan) },
 
     { type: 'section', label: '6 - Ringkasan Hasil Keuangan', value: '' },
-    { type: 'item', label: '6.1 - Saldo Awal (Total Pemasukan Kumulatif Periode Lalu − total Pengeluaran Kumulatif Periode Lalu)', value: formatCurrency(reports?.ringkasan?.saldoAwal) },
+    { type: 'item', label: '6.1 - Saldo Awal (Total Pemasukan Kumulatif Periode Lalu - total Pengeluaran Kumulatif Periode Lalu)', value: formatCurrency(reports?.ringkasan?.saldoAwal) },
     { type: 'item', label: '6.2 - Saldo Akhir (Saldo Awal + Surplus)', value: formatCurrency(reports?.ringkasan?.saldoAkhir) },
     { type: 'item', label: '6.3 - Surplus (Total Pemasukan - Total Pengeluaran)', value: formatCurrency(reports?.ringkasan?.surplus) },
     { type: 'total', label: 'Laba/Rugi Bersih (Surplus)', value: formatCurrency(reports?.ringkasan?.surplus) },
