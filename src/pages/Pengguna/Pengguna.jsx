@@ -620,6 +620,12 @@ function DetailPenggunaModal({ user, onClose, loadingDetail = false, detailError
     source.mail ??
     source.user?.mail ??
     '-'
+  const pegawaiId =
+    source.id ??
+    source.pegawaiId ??
+    source.pegawai_id ??
+    source.pegawai?.id ??
+    '-'
   const createdAt = source.createdAt ?? source.created_at ?? source.user?.createdAt ?? source.user?.created_at
   const tanggalDibuat = createdAt
     ? `${new Intl.DateTimeFormat('id-ID', {
@@ -677,6 +683,10 @@ function DetailPenggunaModal({ user, onClose, loadingDetail = false, detailError
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
+              <p className="text-xs text-gray-400 mb-1">ID Pegawai</p>
+              <p className="font-medium text-gray-800 break-all">{pegawaiId}</p>
+            </div>
+            <div>
               <p className="text-xs text-gray-400 mb-1">Nama Lengkap</p>
               <p className="font-medium text-gray-800">{source.nama || '-'}</p>
             </div>
@@ -700,21 +710,20 @@ function DetailPenggunaModal({ user, onClose, loadingDetail = false, detailError
               <p className="text-xs text-gray-400 mb-1">Email</p>
               <p className="font-medium text-gray-800 break-all">{email}</p>
             </div>
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Alamat</p>
+            <p className="text-sm font-medium text-gray-800">{source.alamat || '-'}</p>
+          </div>
+            <div>
+              <p className="text-xs text-gray-400 mb-1">Tanggal Dibuat</p>
+              <p className="font-medium text-gray-800">{tanggalDibuat}</p>
+            </div>
             <div>
               <p className="text-xs text-gray-400 mb-1">Status</p>
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-semibold ${aktif ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                 {aktif ? 'Aktif' : 'Tidak Aktif'}
               </span>
             </div>
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Tanggal Dibuat</p>
-              <p className="font-medium text-gray-800">{tanggalDibuat}</p>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs text-gray-400 mb-1">Alamat</p>
-            <p className="text-sm font-medium text-gray-800">{source.alamat || '-'}</p>
           </div>
         </div>
 

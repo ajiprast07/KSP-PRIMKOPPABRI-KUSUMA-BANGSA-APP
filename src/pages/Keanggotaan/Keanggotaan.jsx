@@ -1200,6 +1200,7 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
   const isSubmitting = !!submittingAction
   const canVerify = canVerifyByStatus(detail?.status)
   const statusConfig = getStatus(String(detail?.status ?? 'PENDING').toUpperCase())
+  const anggotaId = detail?.id ?? detail?.nasabahId ?? detail?.nasabah_id ?? '-'
   const dokumenList = sortDokumenByPriority(Array.isArray(detail?.dokumen) ? detail.dokumen : [])
 
   return createPortal(
@@ -1254,6 +1255,10 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
                 <div className="rounded-xl border border-gray-100 p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-gray-900">Data Pribadi</h4>
                   <div className="space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500">ID Anggota</span>
+                      <span className="text-gray-900 text-right font-medium break-all">{anggotaId}</span>
+                    </div>
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">NIK</span>
                       <span className="text-gray-900 text-right font-medium">{detail.nik || '-'}</span>
@@ -1561,6 +1566,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
   if (!open) return null
 
   const statusConfig = getStatus(String(detail?.status ?? 'PENDING').toUpperCase())
+  const anggotaId = detail?.id ?? detail?.nasabahId ?? detail?.nasabah_id ?? '-'
   const dokumenList = sortDokumenByPriority(Array.isArray(detail?.dokumen) ? detail.dokumen : [])
   return createPortal(
     <div
@@ -1614,6 +1620,10 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
                 <div className="rounded-xl border border-gray-100 p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-gray-900">Data Pribadi</h4>
                   <div className="space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500">ID Anggota</span>
+                      <span className="text-gray-900 text-right break-all">{anggotaId}</span>
+                    </div>
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">NIK</span>
                       <span className="text-gray-900 text-right">{detail.nik || '-'}</span>

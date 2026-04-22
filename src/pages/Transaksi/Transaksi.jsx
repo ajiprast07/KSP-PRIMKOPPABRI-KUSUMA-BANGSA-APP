@@ -1876,7 +1876,7 @@ function toNasabahOption(item) {
                     </div>
 
                     <div className="rounded-xl border border-gray-100 p-4 space-y-3">
-                      <h4 className="text-sm font-semibold text-gray-900">Data Pegawai</h4>
+                      <h4 className="text-sm font-semibold text-gray-900">Data Penanggung Jawab</h4>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between gap-4">
                           <span className="text-gray-500">Nama</span>

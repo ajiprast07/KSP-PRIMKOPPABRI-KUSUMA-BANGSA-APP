@@ -111,6 +111,49 @@ function getActionLabel(action) {
     .join(' ')
 }
 
+function toReadableToken(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '-'
+
+  return raw
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function resolveEntityName(record) {
+  const value = [
+    record?.entityName,
+    record?.entity,
+    record?.entityType,
+    record?.tableName,
+    record?.table,
+    record?.model,
+    record?.resource,
+    record?.module,
+  ].find((item) => String(item ?? '').trim())
+
+  return toReadableToken(value)
+}
+
+function resolveEntityId(record) {
+  const value = [
+    record?.entityId,
+    record?.entity_id,
+    record?.recordId,
+    record?.record_id,
+    record?.referenceId,
+    record?.reference_id,
+    record?.targetId,
+    record?.target_id,
+  ].find((item) => item !== undefined && item !== null && String(item).trim())
+
+  return value == null ? '-' : String(value)
+}
+
 function JsonPanel({ title, value }) {
   const output = value == null ? '-' : JSON.stringify(value, null, 2)
 
@@ -198,6 +241,14 @@ function DetailModal({ open, onClose, loading, error, detail }) {
                   </span>
                 </div>
                 <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Entitas</p>
+                  <p className="mt-1 text-gray-800">{resolveEntityName(detail)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">ID Entitas</p>
+                  <p className="mt-1 text-gray-800 break-all">{resolveEntityId(detail)}</p>
+                </div>
+                <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">User ID</p>
                   <p className="mt-1 text-gray-800">{detail.userId ?? '-'}</p>
                 </div>
@@ -228,8 +279,10 @@ export default function Aktivitas() {
   const [search, setSearch] = useState('')
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [actionFilter, setActionFilter] = useState('semua')
+  const [entityFilter, setEntityFilter] = useState('semua')
   const [selectedDate, setSelectedDate] = useState('')
   const [draftActionFilter, setDraftActionFilter] = useState('semua')
+  const [draftEntityFilter, setDraftEntityFilter] = useState('semua')
   const [draftSelectedDate, setDraftSelectedDate] = useState('')
   const [page, setPage] = useState(1)
   const [filteredPage, setFilteredPage] = useState(1)
@@ -328,7 +381,7 @@ export default function Aktivitas() {
   }, [authFetch])
 
   const hasActiveSearch = search.trim().length > 0
-  const isFilteredView = actionFilter !== 'semua' || Boolean(selectedDate) || hasActiveSearch
+  const isFilteredView = actionFilter !== 'semua' || entityFilter !== 'semua' || Boolean(selectedDate) || hasActiveSearch
 
   const sourceRows = useMemo(() => {
     return isFilteredView ? allAuditTrails : auditTrails
@@ -349,6 +402,20 @@ export default function Aktivitas() {
       .map((action) => ({ value: action, label: getActionLabel(action) }))
 
     return [...BASE_ACTION_FILTER_OPTIONS, ...dynamicActions]
+  }, [auditTrails, allAuditTrails])
+
+  const entityFilterOptions = useMemo(() => {
+    const dynamicEntities = Array.from(
+      new Set(
+        [...auditTrails, ...allAuditTrails]
+          .map((item) => resolveEntityName(item))
+          .filter((entity) => entity && entity !== '-')
+      )
+    )
+      .sort((a, b) => a.localeCompare(b, 'id', { sensitivity: 'base' }))
+      .map((entity) => ({ value: entity, label: entity }))
+
+    return [{ value: 'semua', label: 'Semua Entitas' }, ...dynamicEntities]
   }, [auditTrails, allAuditTrails])
 
   useEffect(() => {
@@ -394,13 +461,16 @@ export default function Aktivitas() {
     return sourceRows.filter((item) => {
       const actionValue = String(item?.action ?? '').toUpperCase()
       const dateKey = getJakartaDateKey(item?.createdAt)
+      const entityName = resolveEntityName(item)
 
       const matchAction = actionFilter === 'semua' || actionValue === actionFilter
+      const matchEntity = entityFilter === 'semua' || entityName === entityFilter
       const matchDate = !selectedDate || dateKey === selectedDate
 
       const haystack = [
         item?.id,
-        item?.entityName,
+        resolveEntityName(item),
+        resolveEntityId(item),
         item?.action,
         item?.user?.username,
         item?.user?.email,
@@ -412,16 +482,17 @@ export default function Aktivitas() {
 
       const matchSearch = !keyword || haystack.includes(keyword)
 
-      return matchSearch && matchAction && matchDate
+      return matchSearch && matchAction && matchEntity && matchDate
     })
-  }, [sourceRows, search, actionFilter, selectedDate])
+  }, [sourceRows, search, actionFilter, entityFilter, selectedDate])
 
   const activeFilterCount = useMemo(() => {
     let count = 0
     if (actionFilter !== 'semua') count += 1
+    if (entityFilter !== 'semua') count += 1
     if (selectedDate) count += 1
     return count
-  }, [actionFilter, selectedDate])
+  }, [actionFilter, entityFilter, selectedDate])
 
   const filteredTotalPages = Math.max(1, Math.ceil(filteredRows.length / limit))
   const displayedPage = isFilteredView ? filteredPage : pagination.page
@@ -437,7 +508,7 @@ export default function Aktivitas() {
   useEffect(() => {
     if (!isFilteredView) return
     setFilteredPage(1)
-  }, [isFilteredView, actionFilter, selectedDate, search])
+  }, [isFilteredView, actionFilter, entityFilter, selectedDate, search])
 
   useEffect(() => {
     if (!isFilteredView) return
@@ -448,6 +519,7 @@ export default function Aktivitas() {
 
   const openFilterModal = () => {
     setDraftActionFilter(actionFilter)
+    setDraftEntityFilter(entityFilter)
     setDraftSelectedDate(selectedDate)
     setShowFilterModal(true)
 
@@ -457,12 +529,14 @@ export default function Aktivitas() {
 
   const applyFilterModal = () => {
     setActionFilter(draftActionFilter)
+    setEntityFilter(draftEntityFilter)
     setSelectedDate(draftSelectedDate)
     setShowFilterModal(false)
   }
 
   const resetDraftFilters = () => {
     setDraftActionFilter('semua')
+    setDraftEntityFilter('semua')
     setDraftSelectedDate('')
   }
 
@@ -483,7 +557,7 @@ export default function Aktivitas() {
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
               <div>
                 <h2 className="text-base font-bold text-gray-900">Filter Audit</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Atur filter tanggal dan aksi</p>
+                <p className="text-xs text-gray-500 mt-0.5">Atur filter tanggal, aksi, dan entitas</p>
               </div>
               <button
                 type="button"
@@ -515,6 +589,19 @@ export default function Aktivitas() {
                   className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0066FF] focus:ring-offset-2"
                 >
                   {actionFilterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Entitas</label>
+                <select
+                  value={draftEntityFilter}
+                  onChange={(event) => setDraftEntityFilter(event.target.value)}
+                  className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0066FF] focus:ring-offset-2"
+                >
+                  {entityFilterOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
@@ -560,7 +647,7 @@ export default function Aktivitas() {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Cari pengguna, IP..."
+                placeholder="Cari entitas, pengguna, IP..."
                 className="pl-9 h-10"
               />
             </div>
@@ -595,6 +682,7 @@ export default function Aktivitas() {
                   <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
                     <th className="px-3 py-3 font-semibold">Waktu</th>
                     <th className="px-3 py-3 font-semibold">Aksi</th>
+                    <th className="px-3 py-3 font-semibold">Entitas</th>
                     <th className="px-3 py-3 font-semibold">Pengguna</th>
                     <th className="px-3 py-3 font-semibold">IP Address</th>
                   </tr>
@@ -620,6 +708,10 @@ export default function Aktivitas() {
                         <span className={`inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold ${getActionClasses(item.action)}`}>
                           {getActionLabel(item.action)}
                         </span>
+                      </td>
+                      <td className="px-3 py-3 text-gray-700">
+                        <div className="font-medium">{resolveEntityName(item)}</div>
+                        <div className="text-xs text-gray-500">ID: {resolveEntityId(item)}</div>
                       </td>
                       <td className="px-3 py-3 text-gray-700">
                         <div className="font-medium">{item.user?.username ?? '-'}</div>
@@ -659,6 +751,7 @@ export default function Aktivitas() {
                   </div>
 
                   <div className="text-xs text-gray-600 space-y-1">
+                    <p><span className="font-medium text-gray-700">Entitas:</span> {resolveEntityName(item)} (ID: {resolveEntityId(item)})</p>
                     <p><span className="font-medium text-gray-700">User:</span> {item.user?.username ?? '-'} ({item.user?.email ?? '-'})</p>
                     <p><span className="font-medium text-gray-700">IP:</span> {item.ipAddress ?? '-'}</p>
                   </div>
