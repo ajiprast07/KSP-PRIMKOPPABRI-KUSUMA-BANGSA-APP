@@ -1,11 +1,62 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
-import { Download, FileText, RefreshCw } from 'lucide-react'
+import { AlertCircle, CheckCircle, Download, FileText, RefreshCw, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { useAuth } from '@/context/AuthContext'
 import capKoperasiImage from '@/assets/cap koperasi.png'
 import primkoppabriLogo from '@/assets/primkoppabri.png'
 import pepabriLogo from '@/assets/pepabri.png'
+
+function useToast() {
+  const [toasts, setToasts] = useState([])
+
+  const add = useCallback((message, type = 'success') => {
+    const id = Date.now() + Math.random()
+    setToasts((prev) => [...prev, { id, message, type }])
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((item) => item.id !== id))
+    }, 3500)
+  }, [])
+
+  const remove = useCallback((id) => {
+    setToasts((prev) => prev.filter((item) => item.id !== id))
+  }, [])
+
+  const success = useCallback((msg) => add(msg, 'success'), [add])
+  const error = useCallback((msg) => add(msg, 'error'), [add])
+
+  return { toasts, success, error, remove }
+}
+
+function Toast({ toasts, remove }) {
+  if (!toasts.length) return null
+
+  return createPortal(
+    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[99999] flex flex-col gap-2 w-[calc(100vw-2.5rem)] sm:w-auto sm:max-w-sm pointer-events-none">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium ${
+            t.type === 'success' ? 'bg-white border-green-200 text-green-800' : 'bg-white border-red-200 text-red-700'
+          }`}
+        >
+          {t.type === 'success'
+            ? <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+            : <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}
+          <span className="flex-1">{t.message}</span>
+          <button
+            type="button"
+            onClick={() => remove(t.id)}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>,
+    document.body
+  )
+}
 
 function formatCurrency(value) {
   const number = Number(value)
@@ -334,9 +385,11 @@ function mapStatementRows(report) {
 
 export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }) {
   const { authFetch } = useAuth()
+  const toast = useToast()
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [finalizing, setFinalizing] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
 
@@ -392,62 +445,88 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
     return today.day >= (lastDay - 2)
   }, [selectedBulan, selectedTahun])
 
-  const handleGenerateOrFinalize = async () => {
+  const resolveSelectedPeriod = () => {
     const bulan = Number.parseInt(String(selectedBulan), 10)
     const tahun = Number.parseInt(String(selectedTahun), 10)
     if (!Number.isInteger(bulan) || bulan < 1 || bulan > 12) {
-      setError('Periode bulan tidak valid.')
-      return
+      throw new Error('Periode bulan tidak valid.')
     }
     if (!Number.isInteger(tahun) || tahun < 2000) {
-      setError('Periode tahun tidak valid.')
-      return
+      throw new Error('Periode tahun tidak valid.')
     }
+    return { bulan, tahun }
+  }
 
+  const handleGenerate = async () => {
     setGenerating(true)
     setError('')
-    const periodQuery = `?bulan=${bulan}&tahun=${tahun}`
 
     try {
-      if (isLastThreeDaysOfSelectedMonth) {
-        if (!report?.id) {
-          throw new Error('Laporan keuangan belum tersedia untuk finalisasi.')
-        }
+      const { bulan, tahun } = resolveSelectedPeriod()
+      const periodQuery = `?bulan=${bulan}&tahun=${tahun}`
 
-        const reportBulan = Number(report?.periodeBulan)
-        const reportTahun = Number(report?.periodeTahun)
-        if (reportBulan !== bulan || reportTahun !== tahun) {
-          throw new Error('Periode laporan tidak sesuai dengan periode yang sedang dipilih.')
+      const { res, json } = await callWithMethodFallback(
+        `/api/laporan/keuangan/generate${periodQuery}`,
+        'POST',
+        'PATCH',
+        {
+          bulan,
+          tahun,
         }
+      )
+      if (!res.ok) throw new Error(json?.message || 'Gagal mencetak laporan keuangan')
 
-        const { res, json } = await callWithMethodFallback(
-          `/api/laporan/keuangan/${report.id}/finalize${periodQuery}`,
-          'PATCH',
-          'POST',
-          {
-            bulan,
-            tahun,
-          }
-        )
-        if (!res.ok) throw new Error(json?.message || 'Gagal finalisasi laporan keuangan')
-        setReport(normalizeLaporanPayload(json))
-      } else {
-        const { res, json } = await callWithMethodFallback(
-          `/api/laporan/keuangan/generate${periodQuery}`,
-          'POST',
-          'PATCH',
-          {
-            bulan,
-            tahun,
-          }
-        )
-        if (!res.ok) throw new Error(json?.message || 'Gagal mencetak laporan keuangan')
-        setReport(normalizeLaporanPayload(json))
-      }
+      setReport(normalizeLaporanPayload(json))
+      toast.success('Laporan berhasil dicetak')
+      await fetchLaporanKeuangan(bulan, tahun)
     } catch (err) {
       setError(err.message || 'Terjadi kesalahan saat memproses laporan keuangan')
+      toast.error(err.message || 'Terjadi kesalahan saat memproses laporan keuangan')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  const handleFinalize = async () => {
+    setFinalizing(true)
+    setError('')
+
+    try {
+      const { bulan, tahun } = resolveSelectedPeriod()
+      if (!isLastThreeDaysOfSelectedMonth) {
+        throw new Error('Finalisasi hanya tersedia pada 3 hari terakhir bulan yang dipilih.')
+      }
+
+      if (!report?.id) {
+        throw new Error('Laporan keuangan belum tersedia untuk finalisasi.')
+      }
+
+      const reportBulan = Number(report?.periodeBulan)
+      const reportTahun = Number(report?.periodeTahun)
+      if (reportBulan !== bulan || reportTahun !== tahun) {
+        throw new Error('Periode laporan tidak sesuai dengan periode yang sedang dipilih.')
+      }
+
+      const periodQuery = `?bulan=${bulan}&tahun=${tahun}`
+      const { res, json } = await callWithMethodFallback(
+        `/api/laporan/keuangan/${report.id}/finalize${periodQuery}`,
+        'PATCH',
+        'POST',
+        {
+          bulan,
+          tahun,
+        }
+      )
+      if (!res.ok) throw new Error(json?.message || 'Gagal finalisasi laporan keuangan')
+
+      setReport(normalizeLaporanPayload(json))
+      toast.success('Laporan berhasil difinalisasi')
+      await fetchLaporanKeuangan(bulan, tahun)
+    } catch (err) {
+      setError(err.message || 'Terjadi kesalahan saat memproses laporan keuangan')
+      toast.error(err.message || 'Terjadi kesalahan saat memproses laporan keuangan')
+    } finally {
+      setFinalizing(false)
     }
   }
 
@@ -487,6 +566,8 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
 
   return (
     <div className="space-y-5">
+      <Toast toasts={toast.toasts} remove={toast.remove} />
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">Laporan</h1>
@@ -506,16 +587,22 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
           <Button
             type="button"
             variant="outline"
-            onClick={handleGenerateOrFinalize}
-            disabled={loading || generating || (isLastThreeDaysOfSelectedMonth && isFinalized)}
+            onClick={handleGenerate}
+            disabled={loading || generating || finalizing}
             className="w-full sm:w-auto h-10"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
-            {generating
-              ? (isLastThreeDaysOfSelectedMonth ? 'Finalisasi...' : 'Mencetak...')
-              : (isLastThreeDaysOfSelectedMonth
-                ? (isFinalized ? 'Sudah Final' : 'Finalisasi')
-                : 'Cetak Laporan')}
+            {generating ? 'Mencetak...' : 'Cetak Laporan'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleFinalize}
+            disabled={loading || generating || finalizing || isFinalized || !isLastThreeDaysOfSelectedMonth || !report}
+            className="w-full sm:w-auto h-10"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${finalizing ? 'animate-spin' : ''}`} />
+            {finalizing ? 'Finalizing...' : (isFinalized ? 'Sudah Final' : 'Finalize Laporan')}
           </Button>
           <Button
             type="button"

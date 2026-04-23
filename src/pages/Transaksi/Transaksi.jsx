@@ -656,7 +656,6 @@ function toNasabahOption(item) {
       setTransactions(enrichedRows)
     } catch (err) {
       setError(err?.message || 'Terjadi kesalahan saat mengambil transaksi')
-      setTransactions([])
     } finally {
       setLoading(false)
     }
@@ -799,8 +798,9 @@ function toNasabahOption(item) {
   }, [deleteSubmitting])
 
   const confirmDeleteTransaction = useCallback(async () => {
-    const transactionId = Number(deleteTarget?.id)
-    if (!Number.isInteger(transactionId) || transactionId <= 0) {
+    const transactionId = deleteTarget?.id
+    const normalizedId = String(transactionId ?? '').trim()
+    if (!normalizedId) {
       setError('Data transaksi tidak valid untuk dihapus')
       setDeleteTarget(null)
       return
@@ -811,21 +811,22 @@ function toNasabahOption(item) {
     setActionSuccess('')
 
     try {
-      const res = await authFetch(`/api/transaksi/${transactionId}`, { method: 'DELETE' })
+      const res = await authFetch(`/api/transaksi/${encodeURIComponent(normalizedId)}`, { method: 'DELETE' })
       const json = await res.json().catch(() => null)
       if (!res.ok) {
         throw new Error(json?.message || 'Gagal menghapus transaksi')
       }
 
       setActionSuccess(json?.message || 'Transaksi berhasil dihapus')
+      setTransactions((prev) => prev.filter((item) => String(item?.id ?? '') !== normalizedId))
       setDeleteTarget(null)
-      await fetchAllTransactions()
+      await fetchPendingVerificationCount()
     } catch (err) {
       setError(err?.message || 'Terjadi kesalahan saat menghapus transaksi')
     } finally {
       setDeleteSubmitting(false)
     }
-  }, [authFetch, deleteTarget?.id, fetchAllTransactions])
+  }, [authFetch, deleteTarget?.id, fetchPendingVerificationCount])
 
   const openLoanModal = useCallback(async () => {
     setLoanError('')

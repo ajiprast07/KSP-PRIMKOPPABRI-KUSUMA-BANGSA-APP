@@ -52,7 +52,7 @@ function getJakartaPeriod() {
 }
 
 function AppContent() {
-  const { isAuthenticated, logout, dataVersion, permissions } = useAuth()
+  const { isAuthenticated, logout, permissions } = useAuth()
   const [currentPage, setCurrentPage] = useState('beranda')
   const initialPeriod = getJakartaPeriod()
   const [selectedBulan, setSelectedBulan] = useState(initialPeriod.bulan)
@@ -145,7 +145,7 @@ function AppContent() {
       }}
     >
       {activePageEntry ? (
-        <div key={`${activePageEntry.key}-${dataVersion}`}>
+        <div key={activePageEntry.key}>
           {activePageEntry.component}
         </div>
       ) : null}
