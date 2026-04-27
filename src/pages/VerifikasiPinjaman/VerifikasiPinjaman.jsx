@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, CheckCircle, Eye, Filter, Loader2, MoreVertical, Search, ShieldCheck, Trash2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle, Eye, Filter, Loader2, MoreVertical, Search, ShieldCheck, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/AuthContext'
@@ -157,9 +157,6 @@ export default function VerifikasiPinjaman({ onNavigate }) {
   const [detailError, setDetailError] = useState('')
   const [detailData, setDetailData] = useState(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
-
-  const [deleteTarget, setDeleteTarget] = useState(null)
-  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
 
   const [verifyTarget, setVerifyTarget] = useState(null)
   const [verifyDetailLoading, setVerifyDetailLoading] = useState(false)
@@ -494,49 +491,6 @@ export default function VerifikasiPinjaman({ onNavigate }) {
     }
   }, [authFetch, verifyTarget?.id, verifyNote, verifyDisbursementMethod, fetchLoansPage])
 
-  const openDeleteModal = useCallback((loan) => {
-    setActionMenuOpenId('')
-    setDeleteTarget({
-      id: loan?.id,
-      nasabahName: loan?.nasabah?.nama || '-',
-    })
-  }, [])
-
-  const closeDeleteModal = useCallback(() => {
-    if (deleteSubmitting) return
-    setDeleteTarget(null)
-  }, [deleteSubmitting])
-
-  const confirmDeleteLoan = useCallback(async () => {
-    const loanId = Number(deleteTarget?.id)
-    if (!Number.isInteger(loanId) || loanId <= 0) {
-      setError('Data pinjaman tidak valid untuk dihapus')
-      setDeleteTarget(null)
-      return
-    }
-
-    setActionMenuOpenId('')
-    setError('')
-    setSuccess('')
-    setDeleteSubmitting(true)
-
-    try {
-      const res = await authFetch(`/api/pinjaman/${loanId}`, { method: 'DELETE' })
-      const json = await res.json().catch(() => null)
-      if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menghapus pinjaman')
-      }
-
-      setSuccess(json?.message || 'Pinjaman berhasil dihapus')
-      setDeleteTarget(null)
-      await fetchLoansPage()
-    } catch (err) {
-      setError(err?.message || 'Terjadi kesalahan saat menghapus pinjaman')
-    } finally {
-      setDeleteSubmitting(false)
-    }
-  }, [authFetch, deleteTarget?.id, fetchLoansPage])
-
   const filteredRows = useMemo(() => {
     const sortNewestFirst = (list) => {
       return [...list].sort((a, b) => {
@@ -704,14 +658,6 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                                 <ShieldCheck className="h-4 w-4" />
                                 {!canVerify ? 'Sudah Diverifikasi' : 'Verifikasi'}
                               </button>
-                              <button
-                                type="button"
-                                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
-                                onClick={() => openDeleteModal(loan)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Hapus
-                              </button>
                             </div>
                           )}
                         </div>
@@ -756,7 +702,7 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                     </p>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2">
+                  <div className="mt-3 grid grid-cols-2 gap-2">
                     <Button
                       type="button"
                       variant="outline"
@@ -774,14 +720,6 @@ export default function VerifikasiPinjaman({ onNavigate }) {
                     >
                       <ShieldCheck className="mr-1 h-4 w-4" />
                       {!canVerify ? 'Selesai' : 'Verifikasi'}
-                    </Button>
-                    <Button
-                      type="button"
-                      className="h-9 bg-rose-600 text-xs font-semibold text-white hover:bg-rose-700"
-                      onClick={() => openDeleteModal(loan)}
-                    >
-                      <Trash2 className="mr-1 h-4 w-4" />
-                      Hapus
                     </Button>
                   </div>
                 </div>
@@ -1155,62 +1093,6 @@ export default function VerifikasiPinjaman({ onNavigate }) {
               >
                 {verifySubmittingAction === 'approve' && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {verifySubmittingAction === 'approve' ? 'Menyetujui...' : 'Setujui'}
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {Boolean(deleteTarget) && createPortal(
-        <div
-          className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
-          onClick={closeDeleteModal}
-        >
-          <div
-            className="w-full rounded-t-2xl border border-slate-200 bg-white shadow-xl sm:max-w-md sm:rounded-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">Hapus Pinjaman</h2>
-                <p className="text-xs text-slate-500">Tindakan ini tidak bisa dibatalkan.</p>
-              </div>
-              <button
-                type="button"
-                aria-label="Tutup modal hapus"
-                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                onClick={closeDeleteModal}
-                disabled={deleteSubmitting}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="px-4 py-4 text-sm text-slate-700">
-              <p>
-                Yakin ingin menghapus pinjaman <span className="font-semibold">#{deleteTarget?.id}</span>
-                {' '}milik <span className="font-semibold">{deleteTarget?.nasabahName}</span>?
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 flex-1 border-slate-200"
-                onClick={closeDeleteModal}
-                disabled={deleteSubmitting}
-              >
-                Batal
-              </Button>
-              <Button
-                type="button"
-                className="h-10 flex-1 bg-rose-600 text-white hover:bg-rose-700"
-                onClick={confirmDeleteLoan}
-                disabled={deleteSubmitting}
-              >
-                {deleteSubmitting ? 'Menghapus...' : 'Hapus'}
               </Button>
             </div>
           </div>

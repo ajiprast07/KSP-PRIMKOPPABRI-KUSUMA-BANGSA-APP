@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, ArrowDownUp, CheckCircle, CheckCircle2, Eye, Filter, Loader2, MoreVertical, Plus, Search, ShieldCheck, Trash2, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react'
+import { AlertCircle, ArrowDownUp, CheckCircle, CheckCircle2, Eye, Filter, Loader2, MoreVertical, Plus, Search, ShieldCheck, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/AuthContext'
@@ -179,6 +179,20 @@ function formatDate(value) {
   })
 }
 
+function formatDateTime(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Jakarta',
+  })
+}
+
 function normalizeTransactionType(type) {
   const normalized = String(type || '').toUpperCase()
   if (normalized === 'PENCAIRAN') return 'PINJAMAN'
@@ -320,9 +334,12 @@ export default function Transaksi({ onNavigate }) {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
   const [detailData, setDetailData] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
-  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
-  const [actionSuccess, setActionSuccess] = useState('')
+  const [confirmationModal, setConfirmationModal] = useState({
+    open: false,
+    title: '',
+    rows: [],
+  })
+  const [confirmationSubmitting, setConfirmationSubmitting] = useState(false)
 
 
 function isActiveNasabah(nasabah) {
@@ -419,6 +436,7 @@ function toNasabahOption(item) {
 
   const addMenuRef = useRef(null)
   const lookupCacheRef = useRef(null)
+  const pendingConfirmActionRef = useRef(null)
 
   const addMenuItems = useMemo(() => ['Setoran', 'Penarikan', 'Pencairan', 'Angsuran'], [])
   const displayedNasabahOptions = useMemo(() => {
@@ -737,6 +755,52 @@ function toNasabahOption(item) {
     setWithdrawalError('')
   }, [])
 
+  const showConfirmationModal = useCallback((title, rows, onConfirm) => {
+    const normalizedRows = (Array.isArray(rows) ? rows : [])
+      .filter((row) => row && row.label)
+      .map((row) => ({
+        label: String(row.label),
+        value: String(row.value ?? '-').trim() || '-',
+      }))
+
+    pendingConfirmActionRef.current = typeof onConfirm === 'function' ? onConfirm : null
+
+    setConfirmationModal({
+      open: true,
+      title,
+      rows: normalizedRows,
+    })
+  }, [])
+
+  const closeConfirmationModal = useCallback(() => {
+    if (confirmationSubmitting) return
+    pendingConfirmActionRef.current = null
+    setConfirmationModal((prev) => ({ ...prev, open: false }))
+  }, [confirmationSubmitting])
+
+  const handleConfirmationOk = useCallback(async () => {
+    const action = pendingConfirmActionRef.current
+    if (typeof action !== 'function') {
+      setConfirmationModal((prev) => ({ ...prev, open: false }))
+      return
+    }
+
+    // Close any add-transaction modal first so loading state appears only in confirmation modal.
+    setIsLoanModalOpen(false)
+    setIsInstallmentModalOpen(false)
+    setIsSavingsModalOpen(false)
+    setIsWithdrawalModalOpen(false)
+
+    setConfirmationSubmitting(true)
+    try {
+      await action()
+      pendingConfirmActionRef.current = null
+      setConfirmationModal((prev) => ({ ...prev, open: false }))
+    } finally {
+      setConfirmationSubmitting(false)
+    }
+  }, [])
+
   const openDetailModal = useCallback(async (row) => {
     const transactionId = row?.id
     setActionMenuOpenId('')
@@ -781,52 +845,6 @@ function toNasabahOption(item) {
     setDetailError('')
     setDetailData(null)
   }, [])
-
-  const openDeleteModal = useCallback((row) => {
-    setActionMenuOpenId('')
-    setDeleteTarget({
-      id: row?.id,
-      nasabahName: resolveNasabahName(row),
-      typeLabel: mapTypeLabel(row?.jenisTransaksi),
-      nominal: row?.nominal,
-    })
-  }, [])
-
-  const closeDeleteModal = useCallback(() => {
-    if (deleteSubmitting) return
-    setDeleteTarget(null)
-  }, [deleteSubmitting])
-
-  const confirmDeleteTransaction = useCallback(async () => {
-    const transactionId = deleteTarget?.id
-    const normalizedId = String(transactionId ?? '').trim()
-    if (!normalizedId) {
-      setError('Data transaksi tidak valid untuk dihapus')
-      setDeleteTarget(null)
-      return
-    }
-
-    setDeleteSubmitting(true)
-    setError('')
-    setActionSuccess('')
-
-    try {
-      const res = await authFetch(`/api/transaksi/${encodeURIComponent(normalizedId)}`, { method: 'DELETE' })
-      const json = await res.json().catch(() => null)
-      if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menghapus transaksi')
-      }
-
-      setActionSuccess(json?.message || 'Transaksi berhasil dihapus')
-      setTransactions((prev) => prev.filter((item) => String(item?.id ?? '') !== normalizedId))
-      setDeleteTarget(null)
-      await fetchPendingVerificationCount()
-    } catch (err) {
-      setError(err?.message || 'Terjadi kesalahan saat menghapus transaksi')
-    } finally {
-      setDeleteSubmitting(false)
-    }
-  }, [authFetch, deleteTarget?.id, fetchPendingVerificationCount])
 
   const openLoanModal = useCallback(async () => {
     setLoanError('')
@@ -1066,60 +1084,82 @@ function toNasabahOption(item) {
       return
     }
 
-    setLoanSubmitting(true)
     setLoanError('')
 
-    try {
-      const res = await authFetch('/api/pinjaman', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nasabahId, jumlahPinjaman, tenorBulan }),
-      })
-      const json = await res.json().catch(() => null)
-      if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menambahkan pencairan')
-      }
+    const selectedLoanNasabah = activeNasabahOptions.find((item) => String(item.id) === String(nasabahId))
+    showConfirmationModal('Konfirmasi Tambah Pencairan', [
+      { label: 'Jenis Transaksi', value: 'Pencairan' },
+      { label: 'Anggota', value: selectedLoanNasabah?.name || '-' },
+      { label: 'Nominal Pencairan', value: formatCurrency(jumlahPinjaman) },
+      { label: 'Tenor', value: `${tenorBulan} Bulan` },
+      { label: 'Metode Pembayaran', value: 'Transfer (otomatis)' },
+      { label: 'Waktu Konfirmasi', value: formatDateTime(new Date()) },
+    ], async () => {
+      setLoanSubmitting(true)
+      setLoanError('')
 
-      const createdLoan = resolveLoanFromCreateResponse(json)
-      const createdLoanId = resolveLoanId(createdLoan)
-      const createdLoanStatus = resolveLoanStatus(createdLoan, json)
-
-      let successMessage = json?.message || 'Pengajuan pencairan berhasil dibuat'
-
-      if (isApprovedLoanStatus(createdLoanStatus)) {
-        if (!Number.isInteger(createdLoanId) || createdLoanId <= 0) {
-          throw new Error('Pengajuan berhasil, tetapi pencairan otomatis gagal karena ID pinjaman tidak ditemukan.')
-        }
-
-        const pencairanRes = await authFetch(`/api/pinjaman/${createdLoanId}/pencairan`, {
+      try {
+        const res = await authFetch('/api/pinjaman', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            metodePembayaran: 'TRANSFER',
-            catatan: 'Pencairan otomatis dari menu tambah pencairan (auto approval).',
-          }),
+          body: JSON.stringify({ nasabahId, jumlahPinjaman, tenorBulan }),
         })
-        const pencairanJson = await pencairanRes.json().catch(() => null)
-
-        if (!pencairanRes.ok) {
-          throw new Error(
-            `Pengajuan berhasil, tetapi pencairan otomatis gagal: ${pencairanJson?.message || 'Gagal memproses pencairan pinjaman'}`
-          )
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(json?.message || 'Gagal menambahkan pencairan')
         }
 
-        successMessage = pencairanJson?.message || 'Pencairan otomatis berhasil diproses'
-      }
+        const createdLoan = resolveLoanFromCreateResponse(json)
+        const createdLoanId = resolveLoanId(createdLoan)
+        const createdLoanStatus = resolveLoanStatus(createdLoan, json)
 
-      setLoanSuccess(successMessage)
-      setIsLoanModalOpen(false)
-      await fetchAllTransactions()
-      await fetchPendingVerificationCount()
-    } catch (err) {
-      setLoanError(err?.message || 'Terjadi kesalahan saat membuat pencairan')
-    } finally {
-      setLoanSubmitting(false)
-    }
-  }, [authFetch, loanNasabahId, loanAmount, loanTenor, fetchAllTransactions, fetchPendingVerificationCount])
+        let successMessage = json?.message || 'Pengajuan pencairan berhasil dibuat'
+
+        if (isApprovedLoanStatus(createdLoanStatus)) {
+          if (!Number.isInteger(createdLoanId) || createdLoanId <= 0) {
+            throw new Error('Pengajuan berhasil, tetapi pencairan otomatis gagal karena ID pinjaman tidak ditemukan.')
+          }
+
+          const pencairanRes = await authFetch(`/api/pinjaman/${createdLoanId}/pencairan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              metodePembayaran: 'TRANSFER',
+              catatan: 'Pencairan otomatis dari menu tambah pencairan (auto approval).',
+            }),
+          })
+          const pencairanJson = await pencairanRes.json().catch(() => null)
+
+          if (!pencairanRes.ok) {
+            throw new Error(
+              `Pengajuan berhasil, tetapi pencairan otomatis gagal: ${pencairanJson?.message || 'Gagal memproses pencairan pinjaman'}`
+            )
+          }
+
+          successMessage = pencairanJson?.message || 'Pencairan otomatis berhasil diproses'
+        }
+
+        setLoanSuccess(successMessage)
+        setIsLoanModalOpen(false)
+        await fetchAllTransactions()
+        await fetchPendingVerificationCount()
+      } catch (err) {
+        setLoanError(err?.message || 'Terjadi kesalahan saat membuat pencairan')
+        throw err
+      } finally {
+        setLoanSubmitting(false)
+      }
+    })
+  }, [
+    authFetch,
+    loanNasabahId,
+    loanAmount,
+    loanTenor,
+    fetchAllTransactions,
+    fetchPendingVerificationCount,
+    activeNasabahOptions,
+    showConfirmationModal,
+  ])
 
   const submitInstallment = useCallback(async () => {
     const pinjamanId = Number(installmentPinjamanId)
@@ -1134,39 +1174,59 @@ function toNasabahOption(item) {
       return
     }
 
-    setInstallmentSubmitting(true)
     setInstallmentError('')
 
-    try {
-      const res = await authFetch(`/api/pinjaman/${pinjamanId}/angsuran`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nominal,
-          metodePembayaran: installmentMethod,
-          catatan: installmentNote.trim(),
-        }),
-      })
-      const json = await res.json().catch(() => null)
-      if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menambahkan angsuran')
-      }
+    const selectedInstallmentMember = installmentNasabahOptions.find((item) => String(item.id) === String(installmentNasabahId))
+    showConfirmationModal('Konfirmasi Tambah Angsuran', [
+      { label: 'Jenis Transaksi', value: 'Angsuran' },
+      { label: 'Anggota', value: selectedInstallmentMember?.name || selectedInstallmentLoan?.nasabahName || '-' },
+      { label: 'ID Pinjaman', value: String(pinjamanId) },
+      { label: 'Nominal Angsuran', value: formatCurrency(nominal) },
+      { label: 'Metode Pembayaran', value: mapMethodLabel(installmentMethod) },
+      { label: 'Catatan', value: installmentNote.trim() || '-' },
+      { label: 'Sisa Pinjaman Sebelumnya', value: formatCurrency(selectedInstallmentLoan?.sisaPinjaman) },
+      { label: 'Waktu Konfirmasi', value: formatDateTime(new Date()) },
+    ], async () => {
+      setInstallmentSubmitting(true)
+      setInstallmentError('')
 
-      setInstallmentSuccess(json?.message || 'Transaksi berhasil diproses')
-      setIsInstallmentModalOpen(false)
-      await fetchAllTransactions()
-    } catch (err) {
-      setInstallmentError(err?.message || 'Terjadi kesalahan saat membuat angsuran')
-    } finally {
-      setInstallmentSubmitting(false)
-    }
+      try {
+        const res = await authFetch(`/api/pinjaman/${pinjamanId}/angsuran`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nominal,
+            metodePembayaran: installmentMethod,
+            catatan: installmentNote.trim(),
+          }),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(json?.message || 'Gagal menambahkan angsuran')
+        }
+
+        setInstallmentSuccess(json?.message || 'Transaksi berhasil diproses')
+        setIsInstallmentModalOpen(false)
+        await fetchAllTransactions()
+      } catch (err) {
+        setInstallmentError(err?.message || 'Terjadi kesalahan saat membuat angsuran')
+        throw err
+      } finally {
+        setInstallmentSubmitting(false)
+      }
+    })
   }, [
     authFetch,
     installmentPinjamanId,
     installmentAmount,
+    installmentNasabahId,
+    installmentNasabahOptions,
+    selectedInstallmentLoan?.nasabahName,
+    selectedInstallmentLoan?.sisaPinjaman,
     installmentMethod,
     installmentNote,
     fetchAllTransactions,
+    showConfirmationModal,
   ])
 
   useEffect(() => {
@@ -1234,33 +1294,59 @@ function toNasabahOption(item) {
       return
     }
 
-    setSavingsSubmitting(true)
     setSavingsError('')
 
-    try {
-      const res = await authFetch(`/api/simpanan/rekening/${rekeningId}/setoran`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nominal,
-          metodePembayaran: savingsMethod,
-          catatan: savingsNote.trim(),
-        }),
-      })
-      const json = await res.json().catch(() => null)
-      if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menambahkan setoran')
-      }
+    const selectedSavingsNasabah = savingsNasabahOptions.find((item) => String(item.id) === String(savingsNasabahId))
+    showConfirmationModal('Konfirmasi Tambah Setoran', [
+      { label: 'Jenis Transaksi', value: 'Setoran' },
+      { label: 'Anggota', value: selectedSavingsNasabah?.name || '-' },
+      { label: 'ID Rekening', value: String(rekeningId) },
+      { label: 'Jenis Simpanan', value: selectedSavingsRekening?.jenisSimpanan || '-' },
+      { label: 'Nominal Setoran', value: formatCurrency(nominal) },
+      { label: 'Metode Pembayaran', value: mapMethodLabel(savingsMethod) },
+      { label: 'Catatan', value: savingsNote.trim() || '-' },
+      { label: 'Waktu Konfirmasi', value: formatDateTime(new Date()) },
+    ], async () => {
+      setSavingsSubmitting(true)
+      setSavingsError('')
 
-      setSavingsSuccess(json?.message || 'Transaksi berhasil diproses')
-      setIsSavingsModalOpen(false)
-      await fetchAllTransactions()
-    } catch (err) {
-      setSavingsError(err?.message || 'Terjadi kesalahan saat membuat setoran')
-    } finally {
-      setSavingsSubmitting(false)
-    }
-  }, [authFetch, savingsRekeningId, savingsAmount, savingsMethod, savingsNote, fetchAllTransactions])
+      try {
+        const res = await authFetch(`/api/simpanan/rekening/${rekeningId}/setoran`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nominal,
+            metodePembayaran: savingsMethod,
+            catatan: savingsNote.trim(),
+          }),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(json?.message || 'Gagal menambahkan setoran')
+        }
+
+        setSavingsSuccess(json?.message || 'Transaksi berhasil diproses')
+        setIsSavingsModalOpen(false)
+        await fetchAllTransactions()
+      } catch (err) {
+        setSavingsError(err?.message || 'Terjadi kesalahan saat membuat setoran')
+        throw err
+      } finally {
+        setSavingsSubmitting(false)
+      }
+    })
+  }, [
+    authFetch,
+    savingsRekeningId,
+    savingsAmount,
+    savingsMethod,
+    savingsNote,
+    fetchAllTransactions,
+    savingsNasabahId,
+    savingsNasabahOptions,
+    selectedSavingsRekening?.jenisSimpanan,
+    showConfirmationModal,
+  ])
 
   useEffect(() => {
     if (!isWithdrawalModalOpen || !withdrawalNasabahId) {
@@ -1341,41 +1427,57 @@ function toNasabahOption(item) {
       return
     }
 
-    setWithdrawalSubmitting(true)
     setWithdrawalError('')
 
-    try {
-      const res = await authFetch(`/api/simpanan/rekening/${rekeningId}/penarikan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nominal,
-          metodePembayaran: withdrawalMethod,
-          catatan: withdrawalNote.trim(),
-        }),
-      })
-      const json = await res.json().catch(() => null)
-      if (!res.ok) {
-        throw new Error(json?.message || 'Gagal menambahkan penarikan')
-      }
+    showConfirmationModal('Konfirmasi Tambah Penarikan', [
+      { label: 'Jenis Transaksi', value: 'Penarikan' },
+      { label: 'Anggota', value: selectedWithdrawalNasabah?.name || '-' },
+      { label: 'ID Rekening', value: String(rekeningId) },
+      { label: 'Jenis Simpanan', value: selectedWithdrawalRekening?.jenisSimpanan || '-' },
+      { label: 'Nominal Penarikan', value: formatCurrency(nominal) },
+      { label: 'Metode Pembayaran', value: mapMethodLabel(withdrawalMethod) },
+      { label: 'Catatan', value: withdrawalNote.trim() || '-' },
+      { label: 'Waktu Konfirmasi', value: formatDateTime(new Date()) },
+    ], async () => {
+      setWithdrawalSubmitting(true)
+      setWithdrawalError('')
 
-      setWithdrawalSuccess(json?.message || 'Transaksi berhasil diproses')
-      setIsWithdrawalModalOpen(false)
-      await fetchAllTransactions()
-    } catch (err) {
-      setWithdrawalError(err?.message || 'Terjadi kesalahan saat membuat penarikan')
-    } finally {
-      setWithdrawalSubmitting(false)
-    }
+      try {
+        const res = await authFetch(`/api/simpanan/rekening/${rekeningId}/penarikan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nominal,
+            metodePembayaran: withdrawalMethod,
+            catatan: withdrawalNote.trim(),
+          }),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(json?.message || 'Gagal menambahkan penarikan')
+        }
+
+        setWithdrawalSuccess(json?.message || 'Transaksi berhasil diproses')
+        setIsWithdrawalModalOpen(false)
+        await fetchAllTransactions()
+      } catch (err) {
+        setWithdrawalError(err?.message || 'Terjadi kesalahan saat membuat penarikan')
+        throw err
+      } finally {
+        setWithdrawalSubmitting(false)
+      }
+    })
   }, [
     authFetch,
     withdrawalRekeningId,
-    selectedWithdrawalRekening?.jenisSimpanan,
     selectedWithdrawalNasabah?.isActive,
     withdrawalAmount,
     withdrawalMethod,
     withdrawalNote,
     fetchAllTransactions,
+    selectedWithdrawalNasabah?.name,
+    selectedWithdrawalRekening?.jenisSimpanan,
+    showConfirmationModal,
   ])
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1499,12 +1601,6 @@ function toNasabahOption(item) {
     toast.error(error)
     setError('')
   }, [error, toast])
-
-  useEffect(() => {
-    if (!actionSuccess) return
-    toast.success(actionSuccess)
-    setActionSuccess('')
-  }, [actionSuccess, toast])
 
   useEffect(() => {
     if (!loanSuccess) return
@@ -1680,14 +1776,6 @@ function toNasabahOption(item) {
                               <Eye className="h-4 w-4" />
                               Detail
                             </button>
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
-                              onClick={() => openDeleteModal(row)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Hapus
-                            </button>
                           </div>
                         )}
                       </div>
@@ -1734,19 +1822,11 @@ function toNasabahOption(item) {
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-9 text-xs font-semibold"
+                    className="h-9 text-xs font-semibold col-span-2"
                     onClick={() => openDetailModal(row)}
                   >
                     <Eye className="mr-1.5 h-4 w-4" />
                     Detail
-                  </Button>
-                  <Button
-                    type="button"
-                    className="h-9 bg-rose-600 text-xs font-semibold text-white hover:bg-rose-700"
-                    onClick={() => openDeleteModal(row)}
-                  >
-                    <Trash2 className="mr-1.5 h-4 w-4" />
-                    Hapus
                   </Button>
                 </div>
               </div>
@@ -1900,61 +1980,6 @@ function toNasabahOption(item) {
             <div className="px-5 sm:px-6 py-4 border-t border-gray-100 flex justify-end">
               <Button type="button" variant="outline" className="h-10" onClick={closeDetailModal}>
                 Tutup
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {Boolean(deleteTarget) && createPortal(
-        <div
-          className="fixed inset-0 z-[10002] bg-black/50 flex items-end sm:items-center justify-center sm:p-4"
-          onClick={closeDeleteModal}
-        >
-          <div
-            className="relative z-[10003] w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-base sm:text-lg font-bold text-gray-900">Hapus Transaksi</h2>
-              <button
-                type="button"
-                aria-label="Tutup modal hapus transaksi"
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                onClick={closeDeleteModal}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="px-5 sm:px-6 py-5 space-y-3 text-sm">
-              <p className="text-gray-700">Apakah Anda yakin ingin menghapus transaksi ini?</p>
-              <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 space-y-1 text-gray-700">
-                <p><span className="text-gray-500">ID:</span> {deleteTarget?.id ?? '-'}</p>
-                <p><span className="text-gray-500">Jenis:</span> {deleteTarget?.typeLabel || '-'}</p>
-                <p><span className="text-gray-500">Anggota:</span> {deleteTarget?.nasabahName || '-'}</p>
-                <p><span className="text-gray-500">Nominal:</span> {formatCurrency(deleteTarget?.nominal)}</p>
-              </div>
-            </div>
-
-            <div className="px-5 sm:px-6 py-4 border-t border-gray-100 flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 flex-1"
-                onClick={closeDeleteModal}
-                disabled={deleteSubmitting}
-              >
-                Batal
-              </Button>
-              <Button
-                type="button"
-                className="h-10 flex-1 bg-rose-600 text-white hover:bg-rose-700"
-                onClick={confirmDeleteTransaction}
-                disabled={deleteSubmitting}
-              >
-                {deleteSubmitting ? 'Menghapus...' : 'Hapus'}
               </Button>
             </div>
           </div>
@@ -2566,6 +2591,65 @@ function toNasabahOption(item) {
                 disabled={withdrawalSubmitting}
               >
                 {withdrawalSubmitting ? 'Menyimpan...' : 'Simpan Penarikan'}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {confirmationModal.open && createPortal(
+        <div
+          className="fixed inset-0 z-[10010] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={closeConfirmationModal}
+        >
+          <div
+            className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+              <div>
+                <h2 className="text-base sm:text-lg font-semibold text-slate-900">{confirmationModal.title}</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Tutup konfirmasi transaksi"
+                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                onClick={closeConfirmationModal}
+                disabled={confirmationSubmitting}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[65vh] overflow-y-auto px-4 py-4 sm:px-5">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70">
+                {confirmationModal.rows.map((item) => (
+                  <div key={item.label} className="grid grid-cols-1 gap-1 border-b border-slate-200 px-3 py-2.5 last:border-b-0 sm:grid-cols-[180px_1fr] sm:items-start sm:gap-3">
+                    <p className="text-xs font-medium text-slate-500">{item.label}</p>
+                    <p className="text-sm font-semibold text-slate-800 break-words">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3 sm:px-5">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 flex-1 border-slate-200"
+                onClick={closeConfirmationModal}
+                disabled={confirmationSubmitting}
+              >
+                Tutup
+              </Button>
+              <Button
+                type="button"
+                className="h-10 flex-1 bg-[#003399] text-white hover:bg-[#002b84]"
+                onClick={handleConfirmationOk}
+                disabled={confirmationSubmitting}
+              >
+                {confirmationSubmitting ? 'Mengirim...' : 'Oke & Kirim'}
               </Button>
             </div>
           </div>
