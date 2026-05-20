@@ -1092,7 +1092,6 @@ function toNasabahOption(item) {
       { label: 'Anggota', value: selectedLoanNasabah?.name || '-' },
       { label: 'Nominal Pencairan', value: formatCurrency(jumlahPinjaman) },
       { label: 'Tenor', value: `${tenorBulan} Bulan` },
-      { label: 'Metode Pembayaran', value: 'Transfer (otomatis)' },
       { label: 'Waktu Konfirmasi', value: formatDateTime(new Date()) },
     ], async () => {
       setLoanSubmitting(true)
@@ -1797,10 +1796,6 @@ function toNasabahOption(item) {
             paginatedTransactions.map((row) => (
               <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
                 <div className="mb-2 flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">{mapTypeLabel(row.jenisTransaksi)}</p>
-                    <p className="text-xs text-slate-500">Transaksi #{row?.id ?? '-'}</p>
-                  </div>
                   <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${flowBadgeClass(row.jenisTransaksi)}`}>
                     {mapTypeLabel(row.jenisTransaksi)}
                   </span>
@@ -1810,12 +1805,6 @@ function toNasabahOption(item) {
                   <p className="text-right">Pegawai: {resolvePegawaiName(row)}</p>
                   <p>Tanggal: {formatDate(row.tanggal)}</p>
                   <p className="text-right">Metode: {mapMethodLabel(row.metodePembayaran)}</p>
-                  <p className="text-xs text-slate-500">Status</p>
-                  <p className="text-right">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${getStatusMeta(row).className}`}>
-                      {getStatusMeta(row).label}
-                    </span>
-                  </p>
                   <p className="col-span-2 text-right text-sm font-semibold text-slate-700">{formatCurrency(row.nominal)}</p>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
