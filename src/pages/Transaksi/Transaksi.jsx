@@ -1591,7 +1591,7 @@ function toNasabahOption(item) {
     () => [
       { title: 'Transaksi Masuk', value: formatCurrency(summary.incoming), color: 'text-emerald-700', icon: TrendingUp },
       { title: 'Transaksi Keluar', value: formatCurrency(summary.outgoing), color: 'text-rose-600', icon: TrendingDown },
-      { title: 'Menunggu Verifikasi', value: `${pendingVerificationCount} Transaksi`, color: 'text-[#1967D2]', icon: CheckCircle2 },
+      { title: 'Menunggu Verifikasi', value: `${pendingVerificationCount} Pinjaman`, color: 'text-[#1967D2]', icon: CheckCircle2 },
     ],
     [summary.incoming, summary.outgoing, pendingVerificationCount]
   )
