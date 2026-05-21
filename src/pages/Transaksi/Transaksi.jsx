@@ -1960,6 +1960,60 @@ function toNasabahOption(item) {
                     </div>
                   </div>
 
+                  {(detailData?.rekeningSimpanan || detailData?.pinjaman) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {detailData?.rekeningSimpanan && (
+                        <div className="rounded-xl border border-gray-100 p-4 space-y-3">
+                          <h4 className="text-sm font-semibold text-gray-900">Data Simpanan</h4>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">ID Rekening</span>
+                              <span className="text-gray-900 text-right font-medium">
+                                {detailData?.rekeningSimpanan?.id ?? '-'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">Jenis Simpanan</span>
+                              <span className="text-gray-900 text-right font-medium">
+                                {detailData?.rekeningSimpanan?.jenisSimpanan || '-'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {detailData?.pinjaman && (
+                        <div className="rounded-xl border border-gray-100 p-4 space-y-3">
+                          <h4 className="text-sm font-semibold text-gray-900">Data Pinjaman</h4>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">ID Pinjaman</span>
+                              <span className="text-gray-900 text-right font-medium">
+                                {detailData?.pinjaman?.id ?? '-'}
+                              </span>
+                            </div>
+                            {detailData?.pinjaman?.jumlahPinjaman !== undefined && (
+                              <div className="flex justify-between gap-4">
+                                <span className="text-gray-500">Jumlah Pinjaman</span>
+                                <span className="text-gray-900 text-right font-medium">
+                                  {formatCurrency(detailData?.pinjaman?.jumlahPinjaman)}
+                                </span>
+                              </div>
+                            )}
+                            {detailData?.pinjaman?.sisaPinjaman !== undefined && (
+                              <div className="flex justify-between gap-4">
+                                <span className="text-gray-500">Sisa Pinjaman</span>
+                                <span className="text-gray-900 text-right font-medium">
+                                  {formatCurrency(detailData?.pinjaman?.sisaPinjaman)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </>
               ) : (
                 <div className="py-8 text-sm text-gray-500">Detail transaksi tidak tersedia.</div>
