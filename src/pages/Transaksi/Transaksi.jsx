@@ -1726,21 +1726,25 @@ function toNasabahOption(item) {
                 <th className="px-3 py-2">Nominal</th>
                 <th className="px-3 py-2">Metode</th>
                 <th className="px-3 py-2">Tanggal</th>
-                <th className="px-3 py-2 text-right">Aksi</th>
+                <th className="px-3 py-2 text-right"></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">Memuat data transaksi...</td>
+                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">Memuat data transaksi...</td>
                 </tr>
               ) : filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">Tidak ada data transaksi.</td>
+                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">Tidak ada data transaksi.</td>
                 </tr>
               ) : (
                 paginatedTransactions.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100 text-slate-700">
+                  <tr
+                    key={row.id}
+                    className="border-t border-slate-100 text-slate-700 cursor-pointer hover:bg-slate-50"
+                    onClick={() => openDetailModal(row)}
+                  >
                     <td className="px-3 py-3 align-top">
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${flowBadgeClass(row.jenisTransaksi)}`}>
                         {mapTypeLabel(row.jenisTransaksi)}
@@ -1751,34 +1755,7 @@ function toNasabahOption(item) {
                     <td className="px-3 py-3 align-top font-medium text-slate-700">{formatCurrency(row.nominal)}</td>
                     <td className="px-3 py-3 align-top text-slate-500">{mapMethodLabel(row.metodePembayaran)}</td>
                     <td className="px-3 py-3 align-top text-slate-500">{formatDate(row.tanggal)}</td>
-                    <td className="px-3 py-3 align-top text-right">
-                      <div className="relative inline-flex" data-transaction-action-zone="true">
-                        <button
-                          type="button"
-                          data-transaction-action-zone="true"
-                          className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100"
-                          onClick={() => setActionMenuOpenId((prev) => (prev === String(row.id) ? '' : String(row.id)))}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-
-                        {actionMenuOpenId === String(row.id) && (
-                          <div
-                            data-transaction-action-zone="true"
-                            className="absolute right-0 top-[calc(100%+6px)] z-20 w-40 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
-                          >
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
-                              onClick={() => openDetailModal(row)}
-                            >
-                              <Eye className="h-4 w-4" />
-                              Detail
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </td>
+                    <td className="px-3 py-3 align-top text-right"></td>
                   </tr>
                 ))
               )}
@@ -1794,7 +1771,11 @@ function toNasabahOption(item) {
             <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">Tidak ada data transaksi.</div>
           ) : (
             paginatedTransactions.map((row) => (
-              <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+              <div
+                key={row.id}
+                className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm cursor-pointer hover:border-slate-300"
+                onClick={() => openDetailModal(row)}
+              >
                 <div className="mb-2 flex items-start justify-between gap-2">
                   <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${flowBadgeClass(row.jenisTransaksi)}`}>
                     {mapTypeLabel(row.jenisTransaksi)}
@@ -1806,17 +1787,6 @@ function toNasabahOption(item) {
                   <p>Tanggal: {formatDate(row.tanggal)}</p>
                   <p className="text-right">Metode: {mapMethodLabel(row.metodePembayaran)}</p>
                   <p className="col-span-2 text-right text-sm font-semibold text-slate-700">{formatCurrency(row.nominal)}</p>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9 text-xs font-semibold col-span-2"
-                    onClick={() => openDetailModal(row)}
-                  >
-                    <Eye className="mr-1.5 h-4 w-4" />
-                    Detail
-                  </Button>
                 </div>
               </div>
             ))
