@@ -92,6 +92,13 @@ function getActionLabel(action) {
   const value = String(action ?? '').toUpperCase()
   if (!value) return '-'
 
+  if (value === 'GENERATE_REPORT' || value === 'REPORT_GENERATE' || value === 'LAPORAN_GENERATE' || value === 'GENERATE_LAPORAN') {
+    return 'Cetak Laporan'
+  }
+  if (value === 'FINALIZE_REPORT' || value === 'REPORT_FINALIZE' || value === 'LAPORAN_FINALIZE' || value === 'FINALIZE_LAPORAN') {
+    return 'Finalisasi Laporan'
+  }
+
   if (value === 'LOGIN') return 'Masuk Sistem'
   if (value === 'LOGOUT') return 'Keluar Sistem'
   if (value === 'CREATE') return 'Tambah Data'
