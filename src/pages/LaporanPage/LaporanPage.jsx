@@ -613,7 +613,7 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
               message: `Cetak laporan periode ${periodText(selectedBulan, selectedTahun)}?`,
               confirmLabel: 'Ya, Cetak',
             }, handleGenerate)}
-            disabled={loading || generating || finalizing}
+            disabled={loading || generating || finalizing || isFinalized}
             className="w-full sm:w-auto h-10"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
