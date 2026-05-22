@@ -640,7 +640,7 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
             className="w-full sm:w-auto h-10 bg-[#0A2472] hover:bg-[#081d5e]"
           >
             <Download className="mr-2 h-4 w-4" />
-            {downloading ? 'Menyiapkan...' : 'Download Laporan'}
+            {downloading ? 'Menyiapkan...' : 'Download Laporan Bulanan'}
           </Button>
         </div>
       </div>
