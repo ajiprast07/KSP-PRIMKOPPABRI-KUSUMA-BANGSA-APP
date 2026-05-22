@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Filter, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -195,10 +196,14 @@ function DetailModal({ open, onClose, loading, error, detail }) {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-
-      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-t-2xl bg-white shadow-xl border border-gray-100 sm:rounded-2xl">
+    <div
+      className="fixed inset-0 z-[10000] bg-black/50 flex items-end sm:items-center justify-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative z-[10001] w-full sm:max-w-3xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92vh]"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Detail Audit</h2>
@@ -435,6 +440,7 @@ export default function Aktivitas() {
   }, [isFilteredView, fetchAllAuditTrails, fetchAuditTrails])
 
   const openDetail = useCallback(async (id) => {
+    setShowFilterModal(false)
     setSelectedId(id)
     setDetail(null)
     setDetailError('')
@@ -525,6 +531,7 @@ export default function Aktivitas() {
   }, [isFilteredView, filteredPage, filteredTotalPages])
 
   const openFilterModal = () => {
+    setSelectedId(null)
     setDraftActionFilter(actionFilter)
     setDraftEntityFilter(entityFilter)
     setDraftSelectedDate(selectedDate)
@@ -549,18 +556,26 @@ export default function Aktivitas() {
 
   return (
     <div className="space-y-5">
-      <DetailModal
-        open={Boolean(selectedId)}
-        onClose={closeDetail}
-        loading={detailLoading}
-        error={detailError}
-        detail={detail}
-      />
+      {selectedId && createPortal(
+        <DetailModal
+          open={Boolean(selectedId)}
+          onClose={closeDetail}
+          loading={detailLoading}
+          error={detailError}
+          detail={detail}
+        />,
+        document.body
+      )}
 
-      {showFilterModal ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowFilterModal(false)} />
-          <div className="relative w-full max-w-lg max-h-[90vh] overflow-hidden rounded-t-2xl border border-gray-100 bg-white shadow-xl sm:rounded-2xl">
+      {showFilterModal ? createPortal(
+        <div
+          className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setShowFilterModal(false)}
+        >
+          <div
+            className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl border border-gray-100 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
               <div>
                 <h2 className="text-base font-bold text-gray-900">Filter Audit</h2>
@@ -639,7 +654,8 @@ export default function Aktivitas() {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       ) : null}
 
       <div>
