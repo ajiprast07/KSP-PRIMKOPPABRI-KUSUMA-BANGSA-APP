@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, CheckCircle, Download, FileText, RefreshCw, X } from 'lucide-react'
@@ -285,10 +285,10 @@ function buildPdfFromStatement(
   doc.text('Pimpinan KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR', approvalX, approvalStartY + 122, { align: 'right' })
 
   if (isStamped && stampImageDataUrl) {
-    const stampWidth = 95
-    const stampHeight = 95
-    const stampX = pageRight - right - stampWidth - 42
-    const stampY = approvalStartY + 26
+    const stampWidth = 90
+    const stampHeight = 90
+    const stampX = pageRight - right - stampWidth - 5
+    const stampY = approvalStartY + 25
     doc.addImage(stampImageDataUrl, 'PNG', stampX, stampY, stampWidth, stampHeight)
   }
 
@@ -356,7 +356,7 @@ function StatementTable({ periodeText, rows, approvalDateText, isStamped }) {
           <img
             src={capKoperasiImage}
             alt="Cap Koperasi"
-            className="pointer-events-none absolute bottom-10 right-12 h-24 w-24 object-contain opacity-90"
+            className="pointer-events-none absolute bottom-20 right-7 h-24 w-24 object-contain opacity-90"
           />
         )}
       </div>
@@ -392,6 +392,13 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
   const [finalizing, setFinalizing] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
+  const [confirmModal, setConfirmModal] = useState({
+    open: false,
+    title: '',
+    message: '',
+    confirmLabel: 'Konfirmasi',
+  })
+  const confirmActionRef = useRef(null)
 
   const fetchLaporanKeuangan = useCallback(async (bulan, tahun) => {
     if (!bulan || !tahun) return
@@ -416,6 +423,32 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
     fetchLaporanKeuangan(selectedBulan, selectedTahun)
   }, [fetchLaporanKeuangan, selectedBulan, selectedTahun])
 
+  const openConfirmModal = useCallback((options, action) => {
+    confirmActionRef.current = typeof action === 'function' ? action : null
+    setConfirmModal({
+      open: true,
+      title: options?.title || 'Konfirmasi',
+      message: options?.message || 'Apakah Anda yakin ingin melanjutkan?',
+      confirmLabel: options?.confirmLabel || 'Konfirmasi',
+    })
+  }, [])
+
+  const closeConfirmModal = useCallback(() => {
+    confirmActionRef.current = null
+    setConfirmModal((prev) => ({ ...prev, open: false }))
+  }, [])
+
+  const handleConfirmAction = useCallback(async () => {
+    const action = confirmActionRef.current
+    if (typeof action !== 'function') {
+      closeConfirmModal()
+      return
+    }
+
+    closeConfirmModal()
+    await action()
+  }, [closeConfirmModal])
+
   const callWithMethodFallback = useCallback(async (url, primaryMethod, fallbackMethod, body) => {
     const request = async (method) => {
       const res = await authFetch(url, {
@@ -436,14 +469,6 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
 
   const isFinalized = String(report?.statusLaporan || '').toUpperCase() === 'FINAL'
 
-  const isLastThreeDaysOfSelectedMonth = useMemo(() => {
-    if (!selectedBulan || !selectedTahun) return false
-    const today = getJakartaTodayParts()
-    if (today.month !== selectedBulan || today.year !== selectedTahun) return false
-
-    const lastDay = new Date(selectedTahun, selectedBulan, 0).getDate()
-    return today.day >= (lastDay - 2)
-  }, [selectedBulan, selectedTahun])
 
   const resolveSelectedPeriod = () => {
     const bulan = Number.parseInt(String(selectedBulan), 10)
@@ -493,10 +518,6 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
 
     try {
       const { bulan, tahun } = resolveSelectedPeriod()
-      if (!isLastThreeDaysOfSelectedMonth) {
-        throw new Error('Finalisasi hanya tersedia pada 3 hari terakhir bulan yang dipilih.')
-      }
-
       if (!report?.id) {
         throw new Error('Laporan keuangan belum tersedia untuk finalisasi.')
       }
@@ -587,7 +608,11 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
           <Button
             type="button"
             variant="outline"
-            onClick={handleGenerate}
+            onClick={() => openConfirmModal({
+              title: 'Konfirmasi Cetak Laporan',
+              message: `Cetak laporan periode ${periodText(selectedBulan, selectedTahun)}?`,
+              confirmLabel: 'Ya, Cetak',
+            }, handleGenerate)}
             disabled={loading || generating || finalizing}
             className="w-full sm:w-auto h-10"
           >
@@ -597,8 +622,12 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
           <Button
             type="button"
             variant="outline"
-            onClick={handleFinalize}
-            disabled={loading || generating || finalizing || isFinalized || !isLastThreeDaysOfSelectedMonth || !report}
+            onClick={() => openConfirmModal({
+              title: 'Konfirmasi Finalisasi',
+              message: `Finalisasi laporan periode ${periodText(selectedBulan, selectedTahun)}?`,
+              confirmLabel: 'Ya, Finalisasi',
+            }, handleFinalize)}
+            disabled={loading || generating || finalizing || isFinalized || !report}
             className="w-full sm:w-auto h-10"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${finalizing ? 'animate-spin' : ''}`} />
@@ -648,6 +677,55 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
             </div>
           )}
         </div>
+      )}
+
+      {confirmModal.open && createPortal(
+        <div
+          className="fixed inset-0 z-[10010] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={closeConfirmModal}
+        >
+          <div
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">{confirmModal.title}</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Tutup konfirmasi"
+                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                onClick={closeConfirmModal}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-4 py-4 text-sm text-slate-600">
+              {confirmModal.message}
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 flex-1 border-slate-200"
+                onClick={closeConfirmModal}
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                className="h-10 flex-1 bg-[#0A2472] hover:bg-[#081d5e] text-white"
+                onClick={handleConfirmAction}
+              >
+                {confirmModal.confirmLabel}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )
