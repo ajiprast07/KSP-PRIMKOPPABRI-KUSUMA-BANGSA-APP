@@ -285,10 +285,10 @@ function buildPdfFromStatement(
   doc.text('Pimpinan KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR', approvalX, approvalStartY + 122, { align: 'right' })
 
   if (isStamped && stampImageDataUrl) {
-    const stampWidth = 90
-    const stampHeight = 90
+    const stampWidth = 80
+    const stampHeight = 80
     const stampX = pageRight - right - stampWidth - 5
-    const stampY = approvalStartY + 25
+    const stampY = approvalStartY + 28
     doc.addImage(stampImageDataUrl, 'PNG', stampX, stampY, stampWidth, stampHeight)
   }
 
