@@ -20,6 +20,7 @@ const STATUS_CONFIG = {
 const getStatus = (s) => STATUS_CONFIG[s] ?? { label: s, badge: 'bg-gray-100 text-gray-500', activeClass: 'bg-gray-100 text-gray-500', countClass: 'bg-gray-200 text-gray-600' }
 const canVerifyByStatus = (status) => ['PENDING', 'DITOLAK'].includes(String(status ?? '').toUpperCase())
 const PAGE_LIMIT = 20
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_PROXY_TARGET || ''
 
 function toArray(data) {
   if (Array.isArray(data)) return data
@@ -93,6 +94,17 @@ function isImageDocument(url = '', mimeType = '') {
   return /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(String(url))
 }
 
+function resolveFileUrl(fileUrl = '') {
+  const raw = String(fileUrl || '').trim()
+  if (!raw) return ''
+  if (/^https?:\/\//i.test(raw) || raw.startsWith('//')) return raw
+  if (!API_BASE_URL) return raw
+
+  const base = String(API_BASE_URL).replace(/\/+$/, '')
+  const path = raw.startsWith('/') ? raw : `/${raw}`
+  return `${base}${path}`
+}
+
 function toDateInputValue(value) {
   if (!value) return ''
 
@@ -112,7 +124,8 @@ function toDateInputValue(value) {
 function DokumenPreviewModal({ open, onClose, dokumen }) {
   if (!open || !dokumen?.fileUrl) return null
 
-  const isImage = isImageDocument(dokumen.fileUrl, dokumen.mimeType)
+  const resolvedUrl = resolveFileUrl(dokumen.fileUrl)
+  const isImage = isImageDocument(resolvedUrl, dokumen.mimeType)
 
   return createPortal(
     <div
@@ -139,14 +152,14 @@ function DokumenPreviewModal({ open, onClose, dokumen }) {
         <div className="flex-1 min-h-0 bg-gray-50 p-3 sm:p-4">
           {isImage ? (
             <img
-              src={dokumen.fileUrl}
+              src={resolvedUrl}
               alt={dokumen.jenisDokumen || 'Dokumen Anggota'}
               className="w-full h-full object-contain rounded-lg bg-white border border-gray-100"
             />
           ) : (
             <iframe
               title={dokumen.jenisDokumen || 'Dokumen Anggota'}
-              src={dokumen.fileUrl}
+              src={resolvedUrl}
               className="w-full h-full rounded-lg bg-white border border-gray-100"
             />
           )}
