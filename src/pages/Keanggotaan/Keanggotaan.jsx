@@ -654,6 +654,7 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
     nama: '',
     noHp: '',
     alamat: '',
+    catatan: '',
     pekerjaan: '',
     instansi: '',
     penghasilanBulanan: '',
@@ -702,6 +703,7 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
       nama: member.nama || '',
       noHp: member.noHp || '',
       alamat: member.alamat || '',
+      catatan: member.catatan || '',
       pekerjaan: member.pekerjaan || '',
       instansi: member.instansi || '',
       penghasilanBulanan: member.penghasilanBulanan || '',
@@ -823,6 +825,7 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
         noHp: form.noHp.trim(),
         pekerjaan: form.pekerjaan.trim(),
         instansi: form.instansi.trim(),
+        catatan: form.catatan.trim(),
       }
 
       if (form.penghasilanBulanan) {
@@ -986,6 +989,17 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
                 onChange={handleChange}
                 placeholder="Alamat lengkap"
                 className="h-10"
+                disabled={submitting}
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Catatan</Label>
+              <textarea
+                name="catatan"
+                value={form.catatan}
+                onChange={handleChange}
+                placeholder="Catatan tambahan"
+                className="w-full h-20 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400 resize-none"
                 disabled={submitting}
               />
             </div>
