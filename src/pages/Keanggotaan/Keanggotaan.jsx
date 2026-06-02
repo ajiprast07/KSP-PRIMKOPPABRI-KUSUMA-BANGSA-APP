@@ -325,6 +325,7 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [apiError, setApiError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [form, setForm] = useState({
     nama: '',
     nik: '',
@@ -342,6 +343,7 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
     setStep(1)
     setSubmitting(false)
     setApiError('')
+    setFieldErrors({})
     setForm({
       nama: '',
       nik: '',
@@ -358,32 +360,52 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
   const handleChange = (e) => {
     const { name, value } = e.target
     setForm((p) => ({ ...p, [name]: value }))
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev
+      const next = { ...prev }
+      delete next[name]
+      return next
+    })
   }
 
   const validateStep1 = useCallback(() => {
-    if (!form.nama.trim() || !form.nik.trim()) {
-      return { ok: false, message: 'Nama dan NIK wajib diisi.' }
-    }
+    const errors = {}
+
+    if (!form.nama.trim()) errors.nama = 'Nama wajib diisi.'
+    if (!form.nik.trim()) errors.nik = 'NIK wajib diisi.'
+    if (!form.noHp.trim()) errors.noHp = 'No. HP wajib diisi.'
+    if (!form.pekerjaan.trim()) errors.pekerjaan = 'Pekerjaan wajib diisi.'
+    if (!form.instansi.trim()) errors.instansi = 'Instansi wajib diisi.'
+    if (!form.alamat.trim()) errors.alamat = 'Alamat wajib diisi.'
+    if (!form.tanggalLahir.trim()) errors.tanggalLahir = 'Tanggal lahir wajib diisi.'
 
     const penghasilanRaw = String(form.penghasilanBulanan ?? '').trim()
     const penghasilanNormalized = penghasilanRaw.replace(/\./g, '').replace(',', '.')
     const penghasilanNumber = Number(penghasilanNormalized)
-    if (!penghasilanRaw || Number.isNaN(penghasilanNumber) || penghasilanNumber < 0) {
-      return { ok: false, message: 'Penghasilan bulanan wajib berupa angka dan tidak boleh kurang dari 0.' }
+    if (!penghasilanRaw) {
+      errors.penghasilanBulanan = 'Penghasilan bulanan wajib diisi.'
+    } else if (Number.isNaN(penghasilanNumber) || penghasilanNumber < 0) {
+      errors.penghasilanBulanan = 'Penghasilan bulanan harus berupa angka dan tidak boleh kurang dari 0.'
     }
 
-    return { ok: true, penghasilanNumber }
+    if (Object.keys(errors).length > 0) {
+      return { ok: false, errors }
+    }
+
+    return { ok: true, penghasilanNumber, errors: {} }
   }, [form])
 
   const handleCreateMember = (e) => {
     e.preventDefault()
     const validation = validateStep1()
     if (!validation.ok) {
-      setApiError(validation.message)
+      setApiError('')
+      setFieldErrors(validation.errors || {})
       return
     }
 
     setApiError('')
+    setFieldErrors({})
     setStep(2)
   }
 
@@ -512,18 +534,22 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
               <div className="space-y-1.5">
                 <Label>Nama</Label>
                 <Input name="nama" value={form.nama} onChange={handleChange} placeholder="Nama lengkap anggota" className="h-10" />
+                {fieldErrors.nama && <p className="text-xs text-rose-600">{fieldErrors.nama}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>NIK</Label>
                 <Input name="nik" value={form.nik} onChange={handleChange} placeholder="3201xxxxxxxxxxxx" className="h-10" />
+                {fieldErrors.nik && <p className="text-xs text-rose-600">{fieldErrors.nik}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>No. HP</Label>
                 <Input name="noHp" value={form.noHp} onChange={handleChange} placeholder="0812xxxxxx" className="h-10" />
+                {fieldErrors.noHp && <p className="text-xs text-rose-600">{fieldErrors.noHp}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Pekerjaan</Label>
                 <Input name="pekerjaan" value={form.pekerjaan} onChange={handleChange} placeholder="Wiraswasta" className="h-10" />
+                {fieldErrors.pekerjaan && <p className="text-xs text-rose-600">{fieldErrors.pekerjaan}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Penghasilan Bulanan</Label>
@@ -537,6 +563,7 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
                   placeholder="5000000"
                   className="h-10"
                 />
+                {fieldErrors.penghasilanBulanan && <p className="text-xs text-rose-600">{fieldErrors.penghasilanBulanan}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Tanggal Lahir</Label>
@@ -547,14 +574,17 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
                   onChange={handleChange}
                   className="h-10"
                 />
+                {fieldErrors.tanggalLahir && <p className="text-xs text-rose-600">{fieldErrors.tanggalLahir}</p>}
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Instansi</Label>
                 <Input name="instansi" value={form.instansi} onChange={handleChange} placeholder="Nama instansi" className="h-10" />
+                {fieldErrors.instansi && <p className="text-xs text-rose-600">{fieldErrors.instansi}</p>}
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Alamat</Label>
                 <Input name="alamat" value={form.alamat} onChange={handleChange} placeholder="Alamat lengkap" className="h-10" />
+                {fieldErrors.alamat && <p className="text-xs text-rose-600">{fieldErrors.alamat}</p>}
               </div>
             </div>
 
@@ -1652,6 +1682,10 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
                       <span className="text-gray-500">Instansi</span>
                       <span className="text-gray-900 text-right">{detail.instansi || '-'}</span>
                     </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500">Alamat</span>
+                      <span className="text-gray-900 text-right break-words">{detail.alamat || '-'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1675,8 +1709,8 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
               </div>
 
               <div className="rounded-xl border border-gray-100 p-4 space-y-2">
-                <h4 className="text-sm font-semibold text-gray-900">Alamat</h4>
-                <p className="text-sm text-gray-700 leading-relaxed break-words">{detail.alamat || '-'}</p>
+                <h4 className="text-sm font-semibold text-gray-900">Catatan</h4>
+                <p className="text-sm text-gray-700 leading-relaxed break-words">{detail.catatan || '-'}</p>
               </div>
 
               <div className="rounded-xl border border-gray-100 p-4 space-y-3">
