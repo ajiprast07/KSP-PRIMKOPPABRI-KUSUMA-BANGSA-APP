@@ -1798,12 +1798,6 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
             </>
           )}
         </div>
-
-        <div className="px-5 sm:px-6 py-4 border-t border-gray-100">
-          <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto h-10">
-            Tutup
-          </Button>
-        </div>
         <DokumenPreviewModal
           open={!!previewDokumen}
           onClose={() => setPreviewDokumen(null)}
