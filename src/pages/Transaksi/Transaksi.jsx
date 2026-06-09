@@ -215,29 +215,6 @@ function mapMethodLabel(method) {
   return normalized || '-'
 }
 
-function getStatusMeta(tx) {
-  const txType = normalizeTransactionType(tx?.jenisTransaksi)
-  if (txType !== 'PINJAMAN') {
-    return { label: 'Tidak Perlu Persetujuan', className: 'bg-slate-100 text-slate-600' }
-  }
-  const normalized = String(
-    tx?.pinjamanStatus ||
-    tx?.pinjaman?.status ||
-    tx?.status ||
-    ''
-  ).toUpperCase()
-  if (normalized === 'APPROVED' || normalized === 'DISETUJUI' || normalized === 'SUCCESS' || normalized === 'BERHASIL') {
-    return { label: 'Disetujui', className: 'bg-emerald-100 text-emerald-700' }
-  }
-  if (normalized === 'REJECTED' || normalized === 'DITOLAK' || normalized === 'FAILED' || normalized === 'GAGAL') {
-    return { label: 'Ditolak', className: 'bg-rose-100 text-rose-700' }
-  }
-  if (normalized === 'PROCESSING' || normalized === 'PROSES') {
-    return { label: 'Diproses', className: 'bg-blue-100 text-blue-700' }
-  }
-  return { label: 'Pending', className: 'bg-amber-100 text-amber-700' }
-}
-
 function resolveNasabahName(tx) {
   return tx?.nasabah?.nama || tx?.nasabahNama || tx?.namaNasabah || tx?.nasabah_name || '-'
 }
@@ -521,22 +498,16 @@ function toNasabahOption(item) {
   const fetchLookups = useCallback(async () => {
     if (lookupCacheRef.current) return lookupCacheRef.current
 
-    const [nasabahRes, pegawaiRes, pinjamanRes] = await Promise.all([
+    const [nasabahRes, pinjamanRes] = await Promise.all([
       authFetch('/api/nasabah'),
-      authFetch('/api/pegawai'),
       authFetch('/api/pinjaman'),
     ])
 
     const nasabahJson = await nasabahRes.json().catch(() => null)
-    const pegawaiJson = await pegawaiRes.json().catch(() => null)
     const pinjamanJson = await pinjamanRes.json().catch(() => null)
 
     const newNasabahMap = nasabahRes.ok
       ? toNameMap(toArray(nasabahJson?.data ?? nasabahJson), ['nama', 'namaLengkap', 'fullName'])
-      : {}
-
-    const newPegawaiMap = pegawaiRes.ok
-      ? toNameMap(toArray(pegawaiJson?.data ?? pegawaiJson), ['nama', 'namaLengkap', 'fullName'])
       : {}
 
     const pinjamanRows = pinjamanRes.ok ? toArray(pinjamanJson?.data ?? pinjamanJson) : []
@@ -549,7 +520,7 @@ function toNasabahOption(item) {
       return acc
     }, {})
 
-    const lookupMaps = { newNasabahMap, newPegawaiMap, newPinjamanMap }
+    const lookupMaps = { newNasabahMap, newPegawaiMap: {}, newPinjamanMap }
     lookupCacheRef.current = lookupMaps
     return lookupMaps
   }, [authFetch])
@@ -1722,7 +1693,6 @@ function toNasabahOption(item) {
                   </span>
                 </th>
                 <th className="px-3 py-2">Anggota</th>
-                <th className="px-3 py-2">Pegawai</th>
                 <th className="px-3 py-2">Nominal</th>
                 <th className="px-3 py-2">Metode</th>
                 <th className="px-3 py-2">Tanggal</th>
@@ -1751,7 +1721,6 @@ function toNasabahOption(item) {
                       </span>
                     </td>
                     <td className="px-3 py-3 align-top font-medium text-slate-700">{resolveNasabahName(row)}</td>
-                    <td className="px-3 py-3 align-top font-medium text-slate-700">{resolvePegawaiName(row)}</td>
                     <td className="px-3 py-3 align-top font-medium text-slate-700">{formatCurrency(row.nominal)}</td>
                     <td className="px-3 py-3 align-top text-slate-500">{mapMethodLabel(row.metodePembayaran)}</td>
                     <td className="px-3 py-3 align-top text-slate-500">{formatDate(row.tanggal)}</td>
