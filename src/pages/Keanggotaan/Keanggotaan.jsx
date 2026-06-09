@@ -269,10 +269,6 @@ function MemberCard({ member, onDetail, onVerify, onEdit }) {
               <p className="text-xs text-gray-700 font-medium truncate">{member.pekerjaan || '-'}</p>
             </div>
             <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Alamat</p>
-              <p className="text-xs text-gray-700 font-medium leading-relaxed break-words">{member.alamat || '-'}</p>
-            </div>
-            <div>
               <p className="text-[10px] text-gray-400 uppercase tracking-wide">Instansi</p>
               <p className="text-xs text-gray-700 font-medium truncate">{member.instansi || '-'}</p>
             </div>
@@ -737,7 +733,22 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
         const json = await res.json().catch(() => null)
         if (!res.ok) return
         if (cancelled) return
-        syncExistingDokumen(json?.data?.dokumen)
+        const fetched = json?.data ?? {}
+        // Update form with latest member detail from server (if available)
+        setForm((prev) => ({
+          ...prev,
+          nama: fetched.nama ?? prev.nama,
+          noHp: fetched.noHp ?? fetched.nohp ?? prev.noHp,
+          alamat: fetched.alamat ?? prev.alamat,
+          catatan: fetched.catatan ?? prev.catatan,
+          pekerjaan: fetched.pekerjaan ?? prev.pekerjaan,
+          instansi: fetched.instansi ?? prev.instansi,
+          penghasilanBulanan: fetched.penghasilanBulanan ?? prev.penghasilanBulanan,
+          tanggalLahir: toDateInputValue(fetched.tanggalLahir) || prev.tanggalLahir,
+          pegawaiId: fetched.pegawaiId ?? prev.pegawaiId,
+          status: fetched.status ?? prev.status,
+        }))
+        syncExistingDokumen(fetched.dokumen)
       } finally {
         if (!cancelled) setLoadingDokumen(false)
       }
@@ -1336,12 +1347,6 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
                       <span className="text-gray-500">Penghasilan Bulanan</span>
                       <span className="text-gray-900 text-right font-medium">{formatCurrency(detail.penghasilanBulanan)}</span>
                     </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-gray-100 p-4 space-y-3">
-                  <h4 className="text-sm font-semibold text-gray-900">Data Pekerjaan</h4>
-                  <div className="space-y-2 text-sm">
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-500">Pekerjaan</span>
                       <span className="text-gray-900 text-right font-medium">{detail.pekerjaan || '-'}</span>
@@ -1351,24 +1356,29 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
                       <span className="text-gray-900 text-right font-medium">{detail.instansi || '-'}</span>
                     </div>
                     <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Petugas Penanggung Jawab</span>
-                      <span className="text-gray-900 text-right font-medium">{detail.pegawai?.nama || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Jabatan Petugas</span>
-                      <span className="text-gray-900 text-right font-medium">{detail.pegawai?.jabatan || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Terakhir Diperbarui</span>
-                      <span className="text-gray-900 text-right font-medium">{formatDate(detail.updatedAt, true)}</span>
+                      <span className="text-gray-500">Alamat</span>
+                      <span className="text-gray-900 text-right font-medium">{detail.alamat || '-'}</span>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="rounded-xl border border-gray-100 p-4 space-y-2">
-                <h4 className="text-sm font-semibold text-gray-900">Alamat</h4>
-                <p className="text-sm text-gray-700 leading-relaxed break-words">{detail.alamat || '-'}</p>
+                <div className="rounded-xl border border-gray-100 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-900">Data Penanggung Jawab</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500">Petugas Penanggung Jawab</span>
+                      <span className="text-gray-900 text-right">{detail.pegawai?.nama || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500">Jabatan Petugas</span>
+                      <span className="text-gray-900 text-right">{detail.pegawai?.jabatan || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-500">Terakhir Diperbarui</span>
+                      <span className="text-gray-900 text-right">{formatDate(detail.updatedAt, true)}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-xl border border-gray-100 p-4 space-y-3">
@@ -1482,6 +1492,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
   const [memberLoans, setMemberLoans] = useState([])
   const [financeLoading, setFinanceLoading] = useState(false)
   const [financeError, setFinanceError] = useState('')
+  const [financeLoaded, setFinanceLoaded] = useState(false)
 
   const formatDate = (value, withTime = false) => {
     if (!value) return '-'
@@ -1573,10 +1584,12 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
         .sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))
 
       setMemberLoans(filteredLoans)
+      setFinanceLoaded(true)
     } catch (err) {
       setFinanceError(err.message || 'Terjadi kesalahan saat mengambil data simpanan dan pinjaman anggota')
       setMemberSavings([])
       setMemberLoans([])
+      setFinanceLoaded(false)
     } finally {
       setFinanceLoading(false)
     }
@@ -1591,6 +1604,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
       const json = await res.json().catch(() => null)
       if (!res.ok) throw new Error(json?.message || 'Gagal mengambil detail anggota')
       setDetail(json?.data ?? null)
+      // Automatically load finance data when opening detail modal.
       await fetchMemberFinanceData(memberId)
     } catch (err) {
       setError(err.message || 'Terjadi kesalahan saat mengambil detail anggota')
@@ -1617,6 +1631,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
       setMemberLoans([])
       setFinanceError('')
       setFinanceLoading(false)
+      setFinanceLoaded(false)
     }
   }, [open])
 
@@ -1872,23 +1887,9 @@ export default function Keanggotaan() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.message || 'Gagal mengambil data anggota')
       const baseMembers = (json.data ?? []).map(normalizeMember)
-
-      const membersWithDetail = await Promise.all(
-        baseMembers.map(async (member) => {
-          if (!member?.id) return member
-          try {
-            const detailRes = await authFetch(`/api/nasabah/${member.id}`)
-            const detailJson = await detailRes.json()
-            if (!detailRes.ok) return member
-            const detail = detailJson.data ?? {}
-            return normalizeMember({ ...member, ...detail })
-          } catch {
-            return member
-          }
-        })
-      )
-
-      setMembers(membersWithDetail)
+      // Do not fetch per-member detail here to avoid heavy request burst.
+      // Detailed data is fetched on-demand when opening modals (detail/edit/verify).
+      setMembers(baseMembers)
     } catch (err) {
       setError(err.message)
       return err.message
