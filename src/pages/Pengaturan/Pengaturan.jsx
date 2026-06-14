@@ -188,23 +188,18 @@ function FieldRow({
               </div>
             </div>
           ) : isTenorField(setting) ? (
-            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-              <div className="flex flex-wrap gap-2">
-                {['3', '6', '12'].map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => onChange(`${option}`)}
-                    className={`h-7 rounded-full px-4 text-xs font-semibold transition-colors ${
-                      String(value) === option
-                        ? 'bg-[#0066FF] text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option} Bulan
-                  </button>
-                ))}
-              </div>
+            <div className="space-y-1.5">
+              <Input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                step="1"
+                value={String(value ?? '')}
+                onChange={(event) => onChange(event.target.value)}
+                className="h-11 border-gray-200 bg-white"
+                placeholder="Masukkan jumlah bulan"
+              />
+              <p className="text-xs text-gray-400">Isi sendiri berapa bulan tenor yang diizinkan.</p>
             </div>
           ) : type === 'BOOLEAN' ? (
             <select

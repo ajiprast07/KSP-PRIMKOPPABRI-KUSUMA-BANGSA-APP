@@ -158,6 +158,43 @@ function resolvePinjamanReferenceId(tx) {
   )
 }
 
+function normalizeSettingKey(setting) {
+  return String(setting?.key || '')
+    .trim()
+    .toLowerCase()
+}
+
+function isMinTenorSetting(setting) {
+  const key = normalizeSettingKey(setting)
+  if (key === 'loan.mintenormonths') return true
+
+  const text = `${setting?.key || ''} ${setting?.description || ''}`.toLowerCase()
+  return /(tenor|bulan|pinjaman)/.test(text) && /\b(min|minimal|minimum)\b/.test(text)
+}
+
+function isMaxTenorSetting(setting) {
+  const key = normalizeSettingKey(setting)
+  if (key === 'loan.maxtenormonths') return true
+
+  const text = `${setting?.key || ''} ${setting?.description || ''}`.toLowerCase()
+  return /(tenor|bulan|pinjaman)/.test(text) && /\b(max|maks|maksimal|maximum|atas|tertinggi)\b/.test(text)
+}
+
+function getTenorBounds(settings) {
+  const rows = Array.isArray(settings) ? settings : []
+  const minSetting = rows.find((item) => isMinTenorSetting(item))
+  const maxSetting = rows.find((item) => isMaxTenorSetting(item))
+
+  const minValue = String(minSetting?.value ?? '').trim()
+  const maxValue = String(maxSetting?.value ?? '').trim()
+
+  return {
+    minValue,
+    maxValue,
+    hasBounds: Boolean(minValue || maxValue),
+  }
+}
+
 function formatCurrency(value) {
   const number = Number(value)
   return new Intl.NumberFormat('id-ID', {
@@ -363,7 +400,8 @@ function toNasabahOption(item) {
   const [isLoanModalOpen, setIsLoanModalOpen] = useState(false)
   const [loanNasabahId, setLoanNasabahId] = useState('')
   const [loanAmount, setLoanAmount] = useState('')
-  const [loanTenor, setLoanTenor] = useState('3')
+  const [loanTenor, setLoanTenor] = useState('')
+  const [loanTenorBounds, setLoanTenorBounds] = useState({ minValue: '', maxValue: '', hasBounds: false })
   const [loanNasabahSearch, setLoanNasabahSearch] = useState('')
   const [loanSubmitting, setLoanSubmitting] = useState(false)
   const [loanError, setLoanError] = useState('')
@@ -572,6 +610,18 @@ function toNasabahOption(item) {
       setPendingVerificationCount(pendingCount)
     } catch {
       setPendingVerificationCount(0)
+    }
+  }, [authFetch])
+
+  const fetchTenorBounds = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/settings')
+      const json = await res.json().catch(() => null)
+      if (!res.ok) return { minValue: '', maxValue: '', hasBounds: false }
+
+      return getTenorBounds(toArray(json?.data ?? json))
+    } catch {
+      return { minValue: '', maxValue: '', hasBounds: false }
     }
   }, [authFetch])
 
@@ -823,11 +873,15 @@ function toNasabahOption(item) {
     setLoanSubmitting(false)
     setLoanNasabahId('')
     setLoanAmount('')
-    setLoanTenor('3')
+    setLoanTenor('')
     setLoanNasabahSearch('')
+    setLoanTenorBounds({ minValue: '', maxValue: '', hasBounds: false })
 
     try {
-      const res = await authFetch('/api/nasabah')
+      const [res, bounds] = await Promise.all([
+        authFetch('/api/nasabah'),
+        fetchTenorBounds(),
+      ])
       const json = await res.json().catch(() => null)
       if (!res.ok) {
         throw new Error(json?.message || 'Gagal mengambil data nasabah')
@@ -840,13 +894,14 @@ function toNasabahOption(item) {
         .map((item) => toNasabahOption(item))
 
       setActiveNasabahOptions(options)
+      setLoanTenorBounds(bounds)
       setIsLoanModalOpen(true)
     } catch (err) {
       setLoanError(err?.message || 'Terjadi kesalahan saat memuat nasabah aktif')
       setIsLoanModalOpen(true)
       setActiveNasabahOptions([])
     }
-  }, [authFetch])
+  }, [authFetch, fetchTenorBounds])
 
   const openInstallmentModal = useCallback(async () => {
     setInstallmentError('')
@@ -1041,6 +1096,10 @@ function toNasabahOption(item) {
     const nasabahId = Number(loanNasabahId)
     const jumlahPinjaman = Number(loanAmount)
     const tenorBulan = Number(loanTenor)
+    const minTenor = Number(loanTenorBounds.minValue)
+    const maxTenor = Number(loanTenorBounds.maxValue)
+    const hasMinTenor = Number.isInteger(minTenor) && minTenor > 0
+    const hasMaxTenor = Number.isInteger(maxTenor) && maxTenor > 0
 
     if (!Number.isInteger(nasabahId) || nasabahId <= 0) {
       setLoanError('Pilih anggota aktif terlebih dahulu.')
@@ -1050,8 +1109,16 @@ function toNasabahOption(item) {
       setLoanError('Jumlah pencairan harus lebih besar dari 0.')
       return
     }
-    if (!Number.isInteger(tenorBulan) || ![3, 6, 12].includes(tenorBulan)) {
-      setLoanError('Tenor bulan hanya bisa 3, 6, atau 12.')
+    if (!Number.isInteger(tenorBulan) || tenorBulan <= 0) {
+      setLoanError('Tenor bulan harus berupa angka bulat lebih besar dari 0.')
+      return
+    }
+    if (hasMinTenor && tenorBulan < minTenor) {
+      setLoanError(`Tenor bulan minimal ${minTenor} bulan.`)
+      return
+    }
+    if (hasMaxTenor && tenorBulan > maxTenor) {
+      setLoanError(`Tenor bulan maksimal ${maxTenor} bulan.`)
       return
     }
 
@@ -1125,6 +1192,8 @@ function toNasabahOption(item) {
     loanNasabahId,
     loanAmount,
     loanTenor,
+    loanTenorBounds.minValue,
+    loanTenorBounds.maxValue,
     fetchAllTransactions,
     fetchPendingVerificationCount,
     activeNasabahOptions,
@@ -2121,15 +2190,22 @@ function toNasabahOption(item) {
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Tenor (Bulan)</label>
-                <select
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={loanTenorBounds.minValue || undefined}
+                  max={loanTenorBounds.maxValue || undefined}
+                  step="1"
                   value={loanTenor}
                   onChange={(e) => setLoanTenor(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {[3, 6, 12].map((month) => (
-                    <option key={month} value={String(month)}>{month} Bulan</option>
-                  ))}
-                </select>
+                  className="h-10"
+                  placeholder="Masukkan jumlah bulan"
+                />
+                <p className="text-xs text-slate-500">
+                  {loanTenorBounds.hasBounds
+                    ? `Minimal ${loanTenorBounds.minValue || '-'} bulan dan maksimal ${loanTenorBounds.maxValue || '-'} bulan.`
+                    : 'Batas tenor diambil dari pengaturan. Jika belum ada, masukkan angka bulat lebih dari 0.'}
+                </p>
               </div>
 
               {loanError && (
