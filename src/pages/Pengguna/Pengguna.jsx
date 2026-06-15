@@ -135,6 +135,12 @@ function RoleSelect({ value, onChange, roles, loading }) {
   )
 }
 
+function normalizeRoleName(role) {
+  return String(role?.name || '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
+}
+
 // --- 2-Step Tambah Pengguna Modal ---
 function TambahPenggunaDrawer({ open, onClose, onAdded }) {
   const { authFetch } = useAuth()
@@ -153,7 +159,11 @@ function TambahPenggunaDrawer({ open, onClose, onAdded }) {
     authFetch('/api/roles')
       .then((res) => res.json())
       .then((json) => {
-        const sorted = (json.data ?? []).sort((a, b) => {
+        const visibleRoles = (json.data ?? []).filter((role) => {
+          const normalizedName = normalizeRoleName(role)
+          return normalizedName !== 'superadmin'
+        })
+        const sorted = visibleRoles.sort((a, b) => {
           const ai = ROLE_ORDER.indexOf(a.name)
           const bi = ROLE_ORDER.indexOf(b.name)
           return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
