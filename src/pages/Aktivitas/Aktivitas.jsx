@@ -206,7 +206,7 @@ function DetailModal({ open, onClose, loading, error, detail }) {
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Detail Audit</h2>
+            <h2 className="text-lg font-bold text-gray-900">Detail Aktivitas</h2>
           </div>
           <button
             type="button"
@@ -234,7 +234,7 @@ function DetailModal({ open, onClose, loading, error, detail }) {
           ) : error ? (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
           ) : !detail ? (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">Detail audit tidak ditemukan.</div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">Detail aktivitas tidak ditemukan.</div>
           ) : (
             <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -323,7 +323,7 @@ export default function Aktivitas() {
       const json = await res.json().catch(() => null)
 
       if (!res.ok) {
-        throw new Error(normalizeMessage(json?.message, 'Gagal mengambil data audit trail'))
+        throw new Error(normalizeMessage(json?.message, 'Gagal mengambil data aktivitas'))
       }
 
       const rows = Array.isArray(json?.data) ? json.data : []
@@ -339,7 +339,7 @@ export default function Aktivitas() {
       })
     } catch (err) {
       if (!silent) {
-        setError(err.message || 'Terjadi kesalahan saat mengambil data audit trail')
+        setError(err.message || 'Terjadi kesalahan saat mengambil data aktivitas')
         setAuditTrails([])
         setPagination((prev) => ({ ...prev, total: 0, totalPages: 1, hasNext: false, hasPrev: false }))
       }
@@ -367,7 +367,7 @@ export default function Aktivitas() {
         const json = await res.json().catch(() => null)
 
         if (!res.ok) {
-          throw new Error(normalizeMessage(json?.message, 'Gagal mengambil data audit trail'))
+          throw new Error(normalizeMessage(json?.message, 'Gagal mengambil data aktivitas'))
         }
 
         const rows = Array.isArray(json?.data) ? json.data : []
@@ -382,7 +382,7 @@ export default function Aktivitas() {
       setAllAuditTrails(uniqueRows)
     } catch (err) {
       if (!silent) {
-        setError(err.message || 'Terjadi kesalahan saat mengambil data audit trail')
+        setError(err.message || 'Terjadi kesalahan saat mengambil data aktivitas')
         setAllAuditTrails([])
       }
     } finally {
@@ -451,12 +451,12 @@ export default function Aktivitas() {
       const json = await res.json().catch(() => null)
 
       if (!res.ok) {
-        throw new Error(normalizeMessage(json?.message, 'Gagal mengambil detail audit trail'))
+        throw new Error(normalizeMessage(json?.message, 'Gagal mengambil detail aktivitas'))
       }
 
       setDetail(json?.data ?? null)
     } catch (err) {
-      setDetailError(err.message || 'Terjadi kesalahan saat mengambil detail audit trail')
+      setDetailError(err.message || 'Terjadi kesalahan saat mengambil detail aktivitas')
     } finally {
       setDetailLoading(false)
     }
@@ -578,7 +578,7 @@ export default function Aktivitas() {
           >
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
               <div>
-                <h2 className="text-base font-bold text-gray-900">Filter Audit</h2>
+                <h2 className="text-base font-bold text-gray-900">Filter Aktivitas</h2>
                 <p className="text-xs text-gray-500 mt-0.5">Atur filter tanggal, aksi, dan entitas</p>
               </div>
               <button
@@ -659,7 +659,7 @@ export default function Aktivitas() {
       ) : null}
 
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Audit</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Aktivitas</h1>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 sm:p-5 space-y-4">
@@ -696,7 +696,7 @@ export default function Aktivitas() {
         ) : error ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         ) : filteredRows.length === 0 ? (
-          <div className="py-14 text-center text-sm text-gray-500">Tidak ada data audit yang sesuai.</div>
+          <div className="py-14 text-center text-sm text-gray-500">Tidak ada data aktivitas yang sesuai.</div>
         ) : (
           <>
             <div className="hidden lg:block overflow-x-auto rounded-xl border border-gray-200">
@@ -724,7 +724,7 @@ export default function Aktivitas() {
                       }}
                       role="button"
                       tabIndex={0}
-                      aria-label={`Lihat detail audit ${item.id}`}
+                      aria-label={`Lihat detail aktivitas ${item.id}`}
                     >
                       <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{formatJakartaDate(item.createdAt)}</td>
                       <td className="px-3 py-3">
@@ -761,11 +761,11 @@ export default function Aktivitas() {
                   }}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Lihat detail audit ${item.id}`}
+                  aria-label={`Lihat detail aktivitas ${item.id}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">Audit Aktivitas</p>
+                      <p className="text-sm font-semibold text-gray-900">Aktivitas</p>
                       <p className="text-xs text-gray-500 mt-0.5">{formatJakartaDate(item.createdAt)}</p>
                     </div>
                     <span className={`inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold ${getActionClasses(item.action)}`}>
