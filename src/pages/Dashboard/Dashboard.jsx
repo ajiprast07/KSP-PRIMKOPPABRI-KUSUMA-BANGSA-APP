@@ -218,15 +218,13 @@ export default function Dashboard() {
     return window.matchMedia('(max-width: 640px)').matches
   })
   const [dashboardData, setDashboardData] = useState(null)
-  const [nasabahStats, setNasabahStats] = useState({
-    total: 0,
-    aktif: 0,
-    pending: 0,
-    ditolak: 0,
-    nonaktif: 0,
-  })
+  const [profileData, setProfileData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  const namaUser =
+    pickFirst(profileData, ['nama']) ??
+    '-'
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true)
@@ -240,35 +238,6 @@ export default function Dashboard() {
       }
       const normalizedDashboard = json?.data ?? json?.result ?? json ?? null
       setDashboardData(normalizedDashboard)
-
-      const nasabahRes = await authFetch('/api/nasabah')
-      const nasabahJson = await nasabahRes.json()
-      if (!nasabahRes.ok) {
-        const message = Array.isArray(nasabahJson?.message) ? nasabahJson.message.join(', ') : nasabahJson?.message
-        throw new Error(message || 'Gagal mengambil data nasabah')
-      }
-
-      const nasabahData = nasabahJson?.data ?? nasabahJson?.result ?? nasabahJson
-      const nasabahList = Array.isArray(nasabahData)
-        ? nasabahData
-        : (nasabahData?.items ?? nasabahData?.rows ?? nasabahData?.list ?? nasabahData?.nasabah ?? [])
-
-      const stats = nasabahList.reduce((acc, item) => {
-        const status = String(item.status ?? item.statusKeanggotaan ?? item.status_keanggotaan ?? '').toUpperCase()
-        if (status === 'AKTIF') acc.aktif += 1
-        else if (status === 'PENDING') acc.pending += 1
-        else if (status === 'DITOLAK') acc.ditolak += 1
-        else if (status === 'NONAKTIF') acc.nonaktif += 1
-        return acc
-      }, { aktif: 0, pending: 0, ditolak: 0, nonaktif: 0 })
-
-      setNasabahStats({
-        total: nasabahList.length,
-        aktif: stats.aktif,
-        pending: stats.pending,
-        ditolak: stats.ditolak,
-        nonaktif: stats.nonaktif,
-      })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -276,9 +245,23 @@ export default function Dashboard() {
     }
   }, [authFetch])
 
+  const fetchProfile = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/profile')
+      const json = await res.json()
+      if (res.ok) {
+        const normalized = json?.data ?? json?.result ?? json ?? null
+        setProfileData(normalized)
+      }
+    } catch {
+      // silent fail, fallback ke user context
+    }
+  }, [authFetch])
+
   useEffect(() => {
     fetchDashboard()
-  }, [fetchDashboard])
+    fetchProfile()
+  }, [fetchDashboard, fetchProfile])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -303,11 +286,8 @@ export default function Dashboard() {
   const anggotaAktif = pickNumber(ringkasanUtama, ['anggotaAktif', 'anggota_aktif'])
 
   const statsFromDashboard = {
-    total: totalAnggota || nasabahStats.total,
-    aktif: anggotaAktif || nasabahStats.aktif,
-    pending: nasabahStats.pending,
-    ditolak: nasabahStats.ditolak,
-    nonaktif: nasabahStats.nonaktif,
+    total: totalAnggota,
+    aktif: anggotaAktif,
   }
 
   const cashflowData = useMemo(() => {
@@ -361,8 +341,11 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-gray-900">Beranda</h1>
+        <p className="text-sm text-gray-500">
+          Hallo <span className="font-semibold text-gray-700">{namaUser},</span> Selamat beraktivitas hari ini!
+        </p>
       </div>
 
       {loading && (
