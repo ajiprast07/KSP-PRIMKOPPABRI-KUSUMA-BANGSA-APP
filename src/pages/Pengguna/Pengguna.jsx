@@ -213,6 +213,7 @@ function TambahPenggunaDrawer({ open, onClose, onAdded }) {
     if (!step2.namaLengkap.trim()) errs.namaLengkap = 'Nama lengkap wajib diisi'
     if (!step2.jabatan.trim())     errs.jabatan = 'Jabatan wajib diisi'
     if (!step2.noHp.trim())        errs.noHp = 'No HP wajib diisi'
+    if (!step2.alamat.trim())      errs.alamat = 'Alamat wajib diisi'
     if (!step2.role)               errs.role = 'Role wajib dipilih'
     if (Object.keys(errs).length) { setErrors(errs); return }
 
@@ -327,7 +328,7 @@ function TambahPenggunaDrawer({ open, onClose, onAdded }) {
               <FieldWrapper label="No. HP" error={errors.noHp}>
                 <IconInput icon={Phone} type="tel" name="noHp" placeholder="081234567890" value={step2.noHp} onChange={handleChange2} />
               </FieldWrapper>
-              <FieldWrapper label="Alamat">
+              <FieldWrapper label="Alamat" error={errors.alamat}>
                 <IconInput icon={MapPin} name="alamat" placeholder="Jl. Contoh No. 1" value={step2.alamat} onChange={handleChange2} />
               </FieldWrapper>
               <FieldWrapper label="Role" error={errors.role}>
@@ -729,7 +730,7 @@ function DetailPenggunaModal({ user, onClose, loadingDetail = false, detailError
               <p className="font-medium text-gray-800">{tanggalDibuat}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 mb-1">Status</p>
+              <p className="text-xs text-gray-400 mb-1">Status Pegawai</p>
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-semibold ${aktif ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                 {aktif ? 'Aktif' : 'Tidak Aktif'}
               </span>

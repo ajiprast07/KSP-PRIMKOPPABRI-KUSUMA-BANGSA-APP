@@ -257,7 +257,6 @@ function computeSummary(transactions) {
   )
 }
 
-// Helper: enrich raw tx rows with nasabah/pegawai/pinjaman lookups
 function enrichTransactions(txRows, nasabahMap, pegawaiMap, pinjamanMap) {
   return txRows.map((tx) => {
     const nasabahId = tx?.nasabahId ?? tx?.nasabah?.id
@@ -380,6 +379,11 @@ function toNasabahOption(item) {
   const [loanNasabahSearch, setLoanNasabahSearch] = useState('')
   const [loanSubmitting, setLoanSubmitting] = useState(false)
   const [loanError, setLoanError] = useState('')
+  // ─── field errors per modal ────────────────────────────────────────────────
+  const [loanFieldErrors, setLoanFieldErrors] = useState({})
+  const [installmentFieldErrors, setInstallmentFieldErrors] = useState({})
+  const [savingsFieldErrors, setSavingsFieldErrors] = useState({})
+  const [withdrawalFieldErrors, setWithdrawalFieldErrors] = useState({})
   const [loanSuccess, setLoanSuccess] = useState('')
   const [activeNasabahOptions, setActiveNasabahOptions] = useState([])
 
@@ -455,7 +459,11 @@ function toNasabahOption(item) {
     if (!installmentNasabahId) return []
 
     const selectedMemberLoans = installmentLoanOptions
-      .filter((item) => String(item.nasabahId) === String(installmentNasabahId))
+      .filter(
+        (item) =>
+          String(item.nasabahId) === String(installmentNasabahId) &&
+          Number(item.sisaPinjaman) > 0
+      )
       .sort((a, b) => Number(b.id) - Number(a.id))
 
     return selectedMemberLoans.map((item, index) => ({
@@ -565,7 +573,7 @@ function toNasabahOption(item) {
         }
 
         const rows = toArray(json?.data ?? json)
-  pendingCount += rows.filter((loan) => String(loan?.status || '').toUpperCase() === 'PENDING').length
+        pendingCount += rows.filter((loan) => String(loan?.status || '').toUpperCase() === 'PENDING').length
 
         const pg = json?.pagination ?? {}
         const hasNext = Boolean(pg?.hasNext ?? pg?.has_next)
@@ -681,9 +689,6 @@ function toNasabahOption(item) {
     setActionMenuOpenId('')
   }, [pageIndex])
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Initial fetch / refresh
-  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     fetchAllTransactions()
   }, [fetchAllTransactions, dataVersion])
@@ -692,9 +697,6 @@ function toNasabahOption(item) {
     fetchPendingVerificationCount()
   }, [fetchPendingVerificationCount, dataVersion])
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Add-menu outside-click handler
-  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!addMenuOpen) return undefined
     const handleOutsideClick = (event) => {
@@ -720,6 +722,7 @@ function toNasabahOption(item) {
   const closeLoanModal = useCallback(() => {
     setIsLoanModalOpen(false)
     setLoanError('')
+    setLoanFieldErrors({})
   }, [])
 
   const closeInstallmentModal = useCallback(() => {
@@ -727,16 +730,19 @@ function toNasabahOption(item) {
     setInstallmentNasabahId('')
     setInstallmentPinjamanId('')
     setInstallmentError('')
+    setInstallmentFieldErrors({})
   }, [])
 
   const closeSavingsModal = useCallback(() => {
     setIsSavingsModalOpen(false)
     setSavingsError('')
+    setSavingsFieldErrors({})
   }, [])
 
   const closeWithdrawalModal = useCallback(() => {
     setIsWithdrawalModalOpen(false)
     setWithdrawalError('')
+    setWithdrawalFieldErrors({})
   }, [])
 
   const showConfirmationModal = useCallback((title, rows, onConfirm) => {
@@ -832,6 +838,7 @@ function toNasabahOption(item) {
     setLoanAmount('')
     setLoanTenor('')
     setLoanNasabahSearch('')
+    setLoanFieldErrors({})
 
     try {
       const res = await authFetch('/api/nasabah')
@@ -865,6 +872,7 @@ function toNasabahOption(item) {
     setInstallmentNote('')
     setInstallmentMethod('CASH')
     setInstallmentLoanSearch('')
+    setInstallmentFieldErrors({})
 
     try {
       const [nasabahRes, pinjamanRes] = await Promise.all([
@@ -909,12 +917,16 @@ function toNasabahOption(item) {
 
         if (!nasabah) return acc
 
+        const sisaPinjaman = Number(loan?.sisaPinjaman ?? 0)
+
+        if (sisaPinjaman <= 0) return acc
+
         acc.push({
           id: Number(loanId),
           nasabahId: Number(nasabah?.id || nasabahId || 0),
           nasabahName: nasabah.name,
           jumlahPinjaman: Number(loan?.jumlahPinjaman ?? 0),
-          sisaPinjaman: Number(loan?.sisaPinjaman ?? 0),
+          sisaPinjaman,
         })
         return acc
       }, [])
@@ -950,6 +962,7 @@ function toNasabahOption(item) {
     setSavingsAmount('')
     setSavingsMethod('CASH')
     setSavingsNote('')
+    setSavingsFieldErrors({})
 
     try {
       const res = await authFetch('/api/nasabah')
@@ -984,6 +997,7 @@ function toNasabahOption(item) {
     setWithdrawalAmount('')
     setWithdrawalMethod('CASH')
     setWithdrawalNote('')
+    setWithdrawalFieldErrors({})
 
     try {
       const res = await authFetch('/api/nasabah')
@@ -1044,30 +1058,42 @@ function toNasabahOption(item) {
     }
   }, [openInstallmentModal, openLoanModal, openSavingsModal, openWithdrawalModal])
 
-  const submitLoan = useCallback(async () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Validasi Pencairan (Loan)
+  // ─────────────────────────────────────────────────────────────────────────
+  const validateLoanFields = useCallback(() => {
+    const errors = {}
     const nasabahId = Number(loanNasabahId)
     const jumlahPinjaman = Number(loanAmount)
     const tenorBulan = Number(loanTenor)
 
-    const failLoan = (message) => {
-      setLoanError(message)
-      toast.error(message)
-    }
-
     if (!Number.isInteger(nasabahId) || nasabahId <= 0) {
-      failLoan('Pilih anggota aktif terlebih dahulu.')
-      return
+      errors.nasabahId = 'Pilih anggota aktif terlebih dahulu.'
     }
-    if (!Number.isFinite(jumlahPinjaman) || jumlahPinjaman <= 0) {
-      failLoan('Jumlah pencairan harus lebih besar dari 0.')
-      return
+    if (!loanAmount || !Number.isFinite(jumlahPinjaman) || jumlahPinjaman <= 0) {
+      errors.jumlahPinjaman = 'Jumlah pencairan harus lebih besar dari 0.'
     }
-    if (!Number.isInteger(tenorBulan) || tenorBulan <= 0) {
-      failLoan('Tenor bulan harus berupa angka bulat lebih besar dari 0.')
+    if (!loanTenor || !Number.isInteger(tenorBulan) || tenorBulan <= 0) {
+      errors.tenorBulan = 'Tenor bulan harus berupa angka bulat lebih besar dari 0.'
+    }
+
+    return errors
+  }, [loanNasabahId, loanAmount, loanTenor])
+
+  const submitLoan = useCallback(async () => {
+    const errors = validateLoanFields()
+    if (Object.keys(errors).length > 0) {
+      setLoanFieldErrors(errors)
+      setLoanError('')
       return
     }
 
+    setLoanFieldErrors({})
     setLoanError('')
+
+    const nasabahId = Number(loanNasabahId)
+    const jumlahPinjaman = Number(loanAmount)
+    const tenorBulan = Number(loanTenor)
 
     const selectedLoanNasabah = activeNasabahOptions.find((item) => String(item.id) === String(nasabahId))
     showConfirmationModal('Konfirmasi Tambah Pencairan', [
@@ -1144,22 +1170,43 @@ function toNasabahOption(item) {
     activeNasabahOptions,
     toast,
     showConfirmationModal,
+    validateLoanFields,
   ])
 
-  const submitInstallment = useCallback(async () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Validasi Angsuran (Installment)
+  // ─────────────────────────────────────────────────────────────────────────
+  const validateInstallmentFields = useCallback(() => {
+    const errors = {}
     const pinjamanId = Number(installmentPinjamanId)
     const nominal = Number(installmentAmount)
 
-    if (!Number.isInteger(pinjamanId) || pinjamanId <= 0) {
-      setInstallmentError('Pilih pencairan terlebih dahulu.')
-      return
+    if (!installmentNasabahId || installmentNasabahId === '') {
+      errors.nasabahId = 'Pilih anggota terlebih dahulu.'
     }
-    if (!Number.isFinite(nominal) || nominal <= 0) {
-      setInstallmentError('Nominal angsuran harus lebih besar dari 0.')
+    if (!Number.isInteger(pinjamanId) || pinjamanId <= 0) {
+      errors.pinjamanId = 'Pilih pencairan terlebih dahulu.'
+    }
+    if (!installmentAmount || !Number.isFinite(nominal) || nominal <= 0) {
+      errors.nominal = 'Nominal angsuran harus lebih besar dari 0.'
+    }
+
+    return errors
+  }, [installmentNasabahId, installmentPinjamanId, installmentAmount])
+
+  const submitInstallment = useCallback(async () => {
+    const errors = validateInstallmentFields()
+    if (Object.keys(errors).length > 0) {
+      setInstallmentFieldErrors(errors)
+      setInstallmentError('')
       return
     }
 
+    setInstallmentFieldErrors({})
     setInstallmentError('')
+
+    const pinjamanId = Number(installmentPinjamanId)
+    const nominal = Number(installmentAmount)
 
     const selectedInstallmentMember = installmentNasabahOptions.find((item) => String(item.id) === String(installmentNasabahId))
     showConfirmationModal('Konfirmasi Tambah Angsuran', [
@@ -1212,6 +1259,7 @@ function toNasabahOption(item) {
     installmentNote,
     fetchAllTransactions,
     showConfirmationModal,
+    validateInstallmentFields,
   ])
 
   useEffect(() => {
@@ -1266,20 +1314,40 @@ function toNasabahOption(item) {
     }
   }, [authFetch, isSavingsModalOpen, savingsNasabahId])
 
-  const submitSavings = useCallback(async () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Validasi Setoran (Savings)
+  // ─────────────────────────────────────────────────────────────────────────
+  const validateSavingsFields = useCallback(() => {
+    const errors = {}
     const rekeningId = Number(savingsRekeningId)
     const nominal = Number(savingsAmount)
 
-    if (!Number.isInteger(rekeningId) || rekeningId <= 0) {
-      setSavingsError('Pilih rekening setoran terlebih dahulu.')
-      return
+    if (!savingsNasabahId || savingsNasabahId === '') {
+      errors.nasabahId = 'Pilih anggota terlebih dahulu.'
     }
-    if (!Number.isFinite(nominal) || nominal <= 0) {
-      setSavingsError('Nominal setoran harus lebih besar dari 0.')
+    if (!Number.isInteger(rekeningId) || rekeningId <= 0) {
+      errors.rekeningId = 'Pilih rekening setoran terlebih dahulu.'
+    }
+    if (!savingsAmount || !Number.isFinite(nominal) || nominal <= 0) {
+      errors.nominal = 'Nominal setoran harus lebih besar dari 0.'
+    }
+
+    return errors
+  }, [savingsNasabahId, savingsRekeningId, savingsAmount])
+
+  const submitSavings = useCallback(async () => {
+    const errors = validateSavingsFields()
+    if (Object.keys(errors).length > 0) {
+      setSavingsFieldErrors(errors)
+      setSavingsError('')
       return
     }
 
+    setSavingsFieldErrors({})
     setSavingsError('')
+
+    const rekeningId = Number(savingsRekeningId)
+    const nominal = Number(savingsAmount)
 
     const selectedSavingsNasabah = savingsNasabahOptions.find((item) => String(item.id) === String(savingsNasabahId))
     showConfirmationModal('Konfirmasi Tambah Setoran', [
@@ -1331,6 +1399,7 @@ function toNasabahOption(item) {
     savingsNasabahOptions,
     selectedSavingsRekening?.jenisSimpanan,
     showConfirmationModal,
+    validateSavingsFields,
   ])
 
   useEffect(() => {
@@ -1393,26 +1462,45 @@ function toNasabahOption(item) {
     }
   }, [authFetch, isWithdrawalModalOpen, withdrawalNasabahId, selectedWithdrawalNasabah?.isActive])
 
-  const submitWithdrawal = useCallback(async () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Validasi Penarikan (Withdrawal)
+  // ─────────────────────────────────────────────────────────────────────────
+  const validateWithdrawalFields = useCallback(() => {
+    const errors = {}
     const rekeningId = Number(withdrawalRekeningId)
     const nominal = Number(withdrawalAmount)
     const selectedJenis = String(selectedWithdrawalRekening?.jenisSimpanan || '').toUpperCase()
     const isNonSukarelaType = selectedJenis !== 'SUKARELA'
 
+    if (!withdrawalNasabahId || withdrawalNasabahId === '') {
+      errors.nasabahId = 'Pilih anggota terlebih dahulu.'
+    }
     if (!Number.isInteger(rekeningId) || rekeningId <= 0) {
-      setWithdrawalError('Pilih rekening setoran terlebih dahulu.')
-      return
+      errors.rekeningId = 'Pilih rekening setoran terlebih dahulu.'
     }
-    if (selectedWithdrawalNasabah?.isActive && isNonSukarelaType) {
-      setWithdrawalError('Anggota aktif hanya dapat melakukan penarikan simpanan sukarela.')
-      return
+    if (withdrawalNasabahId && rekeningId > 0 && selectedWithdrawalNasabah?.isActive && isNonSukarelaType) {
+      errors.rekeningId = 'Anggota aktif hanya dapat melakukan penarikan simpanan sukarela.'
     }
-    if (!Number.isFinite(nominal) || nominal <= 0) {
-      setWithdrawalError('Nominal penarikan harus lebih besar dari 0.')
+    if (!withdrawalAmount || !Number.isFinite(nominal) || nominal <= 0) {
+      errors.nominal = 'Nominal penarikan harus lebih besar dari 0.'
+    }
+
+    return errors
+  }, [withdrawalNasabahId, withdrawalRekeningId, withdrawalAmount, selectedWithdrawalNasabah?.isActive, selectedWithdrawalRekening?.jenisSimpanan])
+
+  const submitWithdrawal = useCallback(async () => {
+    const errors = validateWithdrawalFields()
+    if (Object.keys(errors).length > 0) {
+      setWithdrawalFieldErrors(errors)
+      setWithdrawalError('')
       return
     }
 
+    setWithdrawalFieldErrors({})
     setWithdrawalError('')
+
+    const rekeningId = Number(withdrawalRekeningId)
+    const nominal = Number(withdrawalAmount)
 
     showConfirmationModal('Konfirmasi Tambah Penarikan', [
       { label: 'Jenis Transaksi', value: 'Penarikan' },
@@ -1463,6 +1551,7 @@ function toNasabahOption(item) {
     selectedWithdrawalNasabah?.name,
     selectedWithdrawalRekening?.jenisSimpanan,
     showConfirmationModal,
+    validateWithdrawalFields,
   ])
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1642,7 +1731,7 @@ function toNasabahOption(item) {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
                 className="h-10 pl-9"
-                placeholder="Cari anggota, pegawai, metode"
+                placeholder="Cari anggota, metode"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -1765,12 +1854,22 @@ function toNasabahOption(item) {
                     {mapTypeLabel(row.jenisTransaksi)}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
-                  <p>Anggota: {resolveNasabahName(row)}</p>
-                  <p className="text-right">Pegawai: {resolvePegawaiName(row)}</p>
-                  <p>Tanggal: {formatDate(row.tanggal)}</p>
-                  <p className="text-right">Metode: {mapMethodLabel(row.metodePembayaran)}</p>
-                  <p className="col-span-2 text-right text-sm font-semibold text-slate-700">{formatCurrency(row.nominal)}</p>
+                <div className="grid grid-cols-2 gap-y-2 text-xs text-slate-500">
+                  <p className="col-span-2">
+                    Anggota: {resolveNasabahName(row)}
+                  </p>
+
+                  <p>
+                    Tanggal: {formatDate(row.tanggal)}
+                  </p>
+
+                  <p className="text-right">
+                    Metode: {mapMethodLabel(row.metodePembayaran)}
+                  </p>
+
+                  <p className="col-span-2 text-right text-sm font-semibold text-slate-700">
+                    {formatCurrency(row.nominal)}
+                  </p>
                 </div>
               </div>
             ))
@@ -2071,7 +2170,7 @@ function toNasabahOption(item) {
         document.body
       )}
 
-      {/* Loan modal */}
+      {/* ─── Loan / Pencairan modal ─────────────────────────────────────────── */}
       {isLoanModalOpen && createPortal(
         <div
           className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
@@ -2096,6 +2195,7 @@ function toNasabahOption(item) {
             </div>
 
             <div className="space-y-4 px-4 py-4">
+              {/* Anggota */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Anggota Aktif</label>
                 <Input
@@ -2107,19 +2207,26 @@ function toNasabahOption(item) {
                 />
                 <select
                   value={loanNasabahId}
-                  onChange={(e) => setLoanNasabahId(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setLoanNasabahId(e.target.value)
+                    if (loanFieldErrors.nasabahId) setLoanFieldErrors((prev) => { const n = { ...prev }; delete n.nasabahId; return n })
+                  }}
+                  className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${loanFieldErrors.nasabahId ? 'border-rose-400' : 'border-slate-200'}`}
                 >
                   <option value="">Pilih anggota</option>
                   {displayedNasabahOptions.map((item) => (
                     <option key={item.id} value={String(item.id)}>{item.name}</option>
                   ))}
                 </select>
+                {loanFieldErrors.nasabahId && (
+                  <p className="text-xs text-rose-600">{loanFieldErrors.nasabahId}</p>
+                )}
                 {displayedNasabahOptions.length === 0 && (
                   <p className="text-xs text-slate-500">Tidak ada anggota aktif yang cocok dengan pencarian.</p>
                 )}
               </div>
 
+              {/* Jumlah Pencairan */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Jumlah Pencairan</label>
                 <Input
@@ -2128,12 +2235,19 @@ function toNasabahOption(item) {
                   min="1"
                   step="1"
                   value={loanAmount}
-                  onChange={(e) => setLoanAmount(e.target.value)}
-                  className="h-10"
+                  onChange={(e) => {
+                    setLoanAmount(e.target.value)
+                    if (loanFieldErrors.jumlahPinjaman) setLoanFieldErrors((prev) => { const n = { ...prev }; delete n.jumlahPinjaman; return n })
+                  }}
+                  className={`h-10 ${loanFieldErrors.jumlahPinjaman ? 'border-rose-400' : ''}`}
                   placeholder="Contoh: 10000000"
                 />
+                {loanFieldErrors.jumlahPinjaman && (
+                  <p className="text-xs text-rose-600">{loanFieldErrors.jumlahPinjaman}</p>
+                )}
               </div>
 
+              {/* Tenor */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Tenor (Bulan)</label>
                 <Input
@@ -2142,13 +2256,19 @@ function toNasabahOption(item) {
                   min="1"
                   step="1"
                   value={loanTenor}
-                  onChange={(e) => setLoanTenor(e.target.value)}
-                  className="h-10"
+                  onChange={(e) => {
+                    setLoanTenor(e.target.value)
+                    if (loanFieldErrors.tenorBulan) setLoanFieldErrors((prev) => { const n = { ...prev }; delete n.tenorBulan; return n })
+                  }}
+                  className={`h-10 ${loanFieldErrors.tenorBulan ? 'border-rose-400' : ''}`}
                   placeholder="Masukkan jumlah bulan"
                 />
-                <p className="text-xs text-slate-500">
-                  Masukkan tenor sebagai angka bulat dalam bulan.
-                </p>
+                {loanFieldErrors.tenorBulan && (
+                  <p className="text-xs text-rose-600">{loanFieldErrors.tenorBulan}</p>
+                )}
+                {!loanFieldErrors.tenorBulan && (
+                  <p className="text-xs text-slate-500">Masukkan tenor sebagai angka bulat dalam bulan.</p>
+                )}
               </div>
 
               {loanError && (
@@ -2180,7 +2300,7 @@ function toNasabahOption(item) {
         document.body
       )}
 
-      {/* Installment modal */}
+      {/* ─── Installment / Angsuran modal ──────────────────────────────────── */}
       {isInstallmentModalOpen && createPortal(
         <div
           className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
@@ -2205,6 +2325,7 @@ function toNasabahOption(item) {
             </div>
 
             <div className="space-y-4 px-4 py-4">
+              {/* Anggota */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Anggota</label>
                 <Input
@@ -2219,34 +2340,45 @@ function toNasabahOption(item) {
                   onChange={(e) => {
                     setInstallmentNasabahId(e.target.value)
                     setInstallmentPinjamanId('')
+                    if (installmentFieldErrors.nasabahId) setInstallmentFieldErrors((prev) => { const n = { ...prev }; delete n.nasabahId; delete n.pinjamanId; return n })
                   }}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${installmentFieldErrors.nasabahId ? 'border-rose-400' : 'border-slate-200'}`}
                 >
                   <option value="">Pilih anggota</option>
                   {displayedInstallmentNasabahOptions.map((item) => (
                     <option key={item.id} value={String(item.id)}>{item.name}</option>
                   ))}
                 </select>
+                {installmentFieldErrors.nasabahId && (
+                  <p className="text-xs text-rose-600">{installmentFieldErrors.nasabahId}</p>
+                )}
                 {displayedInstallmentNasabahOptions.length === 0 && (
                   <p className="text-xs text-slate-500">Tidak ada anggota yang memiliki pinjaman.</p>
                 )}
               </div>
 
+              {/* Pencairan */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Pencairan Anggota</label>
                 <select
                   value={installmentPinjamanId}
-                  onChange={(e) => setInstallmentPinjamanId(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setInstallmentPinjamanId(e.target.value)
+                    if (installmentFieldErrors.pinjamanId) setInstallmentFieldErrors((prev) => { const n = { ...prev }; delete n.pinjamanId; return n })
+                  }}
+                  className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${installmentFieldErrors.pinjamanId ? 'border-rose-400' : 'border-slate-200'}`}
                   disabled={!installmentNasabahId}
                 >
-                  <option value="">Pilih pinjaman</option>
+                  <option value="">Pilih pencairan</option>
                   {displayedInstallmentLoanOptions.map((item) => (
                     <option key={item.id} value={String(item.id)}>
                       {item.label} - Sisa {formatCurrency(item.sisaPinjaman)}
                     </option>
                   ))}
                 </select>
+                {installmentFieldErrors.pinjamanId && (
+                  <p className="text-xs text-rose-600">{installmentFieldErrors.pinjamanId}</p>
+                )}
                 {installmentNasabahId && displayedInstallmentLoanOptions.length === 0 && (
                   <p className="text-xs text-slate-500">Anggota ini belum memiliki pinjaman yang bisa diangsur.</p>
                 )}
@@ -2265,6 +2397,7 @@ function toNasabahOption(item) {
                 )}
               </div>
 
+              {/* Nominal Angsuran */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Nominal Angsuran</label>
                 <Input
@@ -2273,12 +2406,19 @@ function toNasabahOption(item) {
                   min="1"
                   step="1"
                   value={installmentAmount}
-                  onChange={(e) => setInstallmentAmount(e.target.value)}
-                  className="h-10"
+                  onChange={(e) => {
+                    setInstallmentAmount(e.target.value)
+                    if (installmentFieldErrors.nominal) setInstallmentFieldErrors((prev) => { const n = { ...prev }; delete n.nominal; return n })
+                  }}
+                  className={`h-10 ${installmentFieldErrors.nominal ? 'border-rose-400' : ''}`}
                   placeholder="Contoh: 300000"
                 />
+                {installmentFieldErrors.nominal && (
+                  <p className="text-xs text-rose-600">{installmentFieldErrors.nominal}</p>
+                )}
               </div>
 
+              {/* Metode */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Metode Pembayaran</label>
                 <select
@@ -2291,6 +2431,7 @@ function toNasabahOption(item) {
                 </select>
               </div>
 
+              {/* Catatan */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Catatan</label>
                 <textarea
@@ -2331,7 +2472,7 @@ function toNasabahOption(item) {
         document.body
       )}
 
-      {/* Savings modal */}
+      {/* ─── Savings / Setoran modal ────────────────────────────────────────── */}
       {isSavingsModalOpen && createPortal(
         <div
           className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
@@ -2356,6 +2497,7 @@ function toNasabahOption(item) {
             </div>
 
             <div className="space-y-4 px-4 py-4">
+              {/* Anggota */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Anggota Aktif</label>
                 <Input
@@ -2367,22 +2509,32 @@ function toNasabahOption(item) {
                 />
                 <select
                   value={savingsNasabahId}
-                  onChange={(e) => setSavingsNasabahId(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setSavingsNasabahId(e.target.value)
+                    if (savingsFieldErrors.nasabahId) setSavingsFieldErrors((prev) => { const n = { ...prev }; delete n.nasabahId; return n })
+                  }}
+                  className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${savingsFieldErrors.nasabahId ? 'border-rose-400' : 'border-slate-200'}`}
                 >
                   <option value="">Pilih anggota</option>
                   {displayedSavingsNasabahOptions.map((item) => (
                     <option key={item.id} value={String(item.id)}>{item.name}</option>
                   ))}
                 </select>
+                {savingsFieldErrors.nasabahId && (
+                  <p className="text-xs text-rose-600">{savingsFieldErrors.nasabahId}</p>
+                )}
               </div>
 
+              {/* Rekening */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Rekening Setoran</label>
                 <select
                   value={savingsRekeningId}
-                  onChange={(e) => setSavingsRekeningId(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setSavingsRekeningId(e.target.value)
+                    if (savingsFieldErrors.rekeningId) setSavingsFieldErrors((prev) => { const n = { ...prev }; delete n.rekeningId; return n })
+                  }}
+                  className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${savingsFieldErrors.rekeningId ? 'border-rose-400' : 'border-slate-200'}`}
                   disabled={!savingsNasabahId || savingsLoadingRekening}
                 >
                   <option value="">{savingsLoadingRekening ? 'Memuat rekening...' : 'Pilih rekening setoran'}</option>
@@ -2390,6 +2542,12 @@ function toNasabahOption(item) {
                     <option key={item.id} value={String(item.id)}>{item.label}</option>
                   ))}
                 </select>
+                {savingsFieldErrors.rekeningId && (
+                  <p className="text-xs text-rose-600">{savingsFieldErrors.rekeningId}</p>
+                )}
+                {savingsError && /rekening|setoran/i.test(savingsError) && (
+                  <p className="text-xs text-rose-600">{savingsError}</p>
+                )}
                 {selectedSavingsRekening && (
                   <p className="text-xs text-slate-600">
                     Jenis: <span className="font-semibold text-slate-800">{selectedSavingsRekening.jenisSimpanan}</span>
@@ -2399,6 +2557,7 @@ function toNasabahOption(item) {
                 )}
               </div>
 
+              {/* Nominal */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Nominal Setoran</label>
                 <Input
@@ -2407,12 +2566,19 @@ function toNasabahOption(item) {
                   min="1"
                   step="1"
                   value={savingsAmount}
-                  onChange={(e) => setSavingsAmount(e.target.value)}
-                  className="h-10"
+                  onChange={(e) => {
+                    setSavingsAmount(e.target.value)
+                    if (savingsFieldErrors.nominal) setSavingsFieldErrors((prev) => { const n = { ...prev }; delete n.nominal; return n })
+                  }}
+                  className={`h-10 ${savingsFieldErrors.nominal ? 'border-rose-400' : ''}`}
                   placeholder="Contoh: 200000"
                 />
+                {savingsFieldErrors.nominal && (
+                  <p className="text-xs text-rose-600">{savingsFieldErrors.nominal}</p>
+                )}
               </div>
 
+              {/* Metode */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Metode Pembayaran</label>
                 <select
@@ -2425,6 +2591,7 @@ function toNasabahOption(item) {
                 </select>
               </div>
 
+              {/* Catatan */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Catatan</label>
                 <textarea
@@ -2436,7 +2603,7 @@ function toNasabahOption(item) {
                 />
               </div>
 
-              {savingsError && (
+              {savingsError && !/rekening|setoran/i.test(savingsError) && (
                 <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{savingsError}</p>
               )}
             </div>
@@ -2465,7 +2632,7 @@ function toNasabahOption(item) {
         document.body
       )}
 
-      {/* Withdrawal modal */}
+      {/* ─── Withdrawal / Penarikan modal ───────────────────────────────────── */}
       {isWithdrawalModalOpen && createPortal(
         <div
           className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
@@ -2490,6 +2657,7 @@ function toNasabahOption(item) {
             </div>
 
             <div className="space-y-4 px-4 py-4">
+              {/* Anggota */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Anggota Aktif Dan Tidak Aktif</label>
                 <Input
@@ -2501,22 +2669,32 @@ function toNasabahOption(item) {
                 />
                 <select
                   value={withdrawalNasabahId}
-                  onChange={(e) => setWithdrawalNasabahId(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setWithdrawalNasabahId(e.target.value)
+                    if (withdrawalFieldErrors.nasabahId) setWithdrawalFieldErrors((prev) => { const n = { ...prev }; delete n.nasabahId; return n })
+                  }}
+                  className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${withdrawalFieldErrors.nasabahId ? 'border-rose-400' : 'border-slate-200'}`}
                 >
                   <option value="">Pilih anggota</option>
                   {displayedWithdrawalNasabahOptions.map((item) => (
                     <option key={item.id} value={String(item.id)}>{item.name}</option>
                   ))}
                 </select>
+                {withdrawalFieldErrors.nasabahId && (
+                  <p className="text-xs text-rose-600">{withdrawalFieldErrors.nasabahId}</p>
+                )}
               </div>
 
+              {/* Rekening */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Rekening Setoran</label>
                 <select
                   value={withdrawalRekeningId}
-                  onChange={(e) => setWithdrawalRekeningId(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => {
+                    setWithdrawalRekeningId(e.target.value)
+                    if (withdrawalFieldErrors.rekeningId) setWithdrawalFieldErrors((prev) => { const n = { ...prev }; delete n.rekeningId; return n })
+                  }}
+                  className={`h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${withdrawalFieldErrors.rekeningId ? 'border-rose-400' : 'border-slate-200'}`}
                   disabled={!withdrawalNasabahId || withdrawalLoadingRekening}
                 >
                   <option value="">{withdrawalLoadingRekening ? 'Memuat rekening...' : 'Pilih rekening setoran'}</option>
@@ -2524,6 +2702,12 @@ function toNasabahOption(item) {
                     <option key={item.id} value={String(item.id)}>{item.label}</option>
                   ))}
                 </select>
+                {withdrawalFieldErrors.rekeningId && (
+                  <p className="text-xs text-rose-600">{withdrawalFieldErrors.rekeningId}</p>
+                )}
+                {withdrawalError && /rekening|setoran/i.test(withdrawalError) && (
+                  <p className="text-xs text-rose-600">{withdrawalError}</p>
+                )}
                 {selectedWithdrawalRekening && (
                   <p className="text-xs text-slate-600">
                     Jenis: <span className="font-semibold text-slate-800">{selectedWithdrawalRekening.jenisSimpanan}</span>
@@ -2533,6 +2717,7 @@ function toNasabahOption(item) {
                 )}
               </div>
 
+              {/* Nominal */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Nominal Penarikan</label>
                 <Input
@@ -2541,12 +2726,19 @@ function toNasabahOption(item) {
                   min="1"
                   step="1"
                   value={withdrawalAmount}
-                  onChange={(e) => setWithdrawalAmount(e.target.value)}
-                  className="h-10"
+                  onChange={(e) => {
+                    setWithdrawalAmount(e.target.value)
+                    if (withdrawalFieldErrors.nominal) setWithdrawalFieldErrors((prev) => { const n = { ...prev }; delete n.nominal; return n })
+                  }}
+                  className={`h-10 ${withdrawalFieldErrors.nominal ? 'border-rose-400' : ''}`}
                   placeholder="Contoh: 100000"
                 />
+                {withdrawalFieldErrors.nominal && (
+                  <p className="text-xs text-rose-600">{withdrawalFieldErrors.nominal}</p>
+                )}
               </div>
 
+              {/* Metode */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Metode Pembayaran</label>
                 <select
@@ -2559,6 +2751,7 @@ function toNasabahOption(item) {
                 </select>
               </div>
 
+              {/* Catatan */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">Catatan</label>
                 <textarea
@@ -2570,7 +2763,7 @@ function toNasabahOption(item) {
                 />
               </div>
 
-              {withdrawalError && (
+              {withdrawalError && !/rekening|setoran/i.test(withdrawalError) && (
                 <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{withdrawalError}</p>
               )}
             </div>

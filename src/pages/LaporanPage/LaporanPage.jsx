@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, CheckCircle, Download, FileText, RefreshCw, X } from 'lucide-react'
+import { AlertCircle, CheckCircle, Download, Eye, FileText, Loader2, RefreshCw, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { useAuth } from '@/context/AuthContext'
 import capKoperasiImage from '@/assets/cap koperasi.png'
 import primkoppabriLogo from '@/assets/primkoppabri.png'
 import pepabriLogo from '@/assets/pepabri.png'
 
+// ---------------------------------------------------------------------------
+// Helper: parse error message from BE response json (sama seperti Keanggotaan)
+// ---------------------------------------------------------------------------
+function parseErrorMessage(json, fallback) {
+  if (fallback) return fallback
+  if (!json) return 'Terjadi kesalahan.'
+  const raw = json?.message ?? json?.error ?? json?.detail ?? ''
+  if (Array.isArray(raw)) return raw.join(', ') || 'Terjadi kesalahan.'
+  return String(raw || '').trim() || 'Terjadi kesalahan.'
+}
+
+// ---------------------------------------------------------------------------
+// Toast system
+// ---------------------------------------------------------------------------
 function useToast() {
   const [toasts, setToasts] = useState([])
 
@@ -48,6 +62,7 @@ function Toast({ toasts, remove }) {
           <button
             type="button"
             onClick={() => remove(t.id)}
+            className="text-gray-300 hover:text-gray-500 transition-colors ml-1"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -58,6 +73,9 @@ function Toast({ toasts, remove }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Format helpers
+// ---------------------------------------------------------------------------
 function formatCurrency(value) {
   const number = Number(value)
   const safeNumber = Number.isFinite(number) ? number : 0
@@ -72,22 +90,6 @@ function periodText(month, year) {
   if (!month || !year) return '-'
   const date = new Date(year, month - 1, 1)
   return date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
-}
-
-function getJakartaTodayParts() {
-  const now = new Date()
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now)
-
-  const month = Number(parts.find((p) => p.type === 'month')?.value)
-  const year = Number(parts.find((p) => p.type === 'year')?.value)
-  const day = Number(parts.find((p) => p.type === 'day')?.value)
-
-  return { month, year, day }
 }
 
 function normalizeLaporanPayload(json) {
@@ -126,6 +128,9 @@ function resolveApprovalDate(report) {
     || new Date()
 }
 
+// ---------------------------------------------------------------------------
+// PDF helpers
+// ---------------------------------------------------------------------------
 function renderPageNumbers(doc, exportedAt) {
   const pageCount = doc.getNumberOfPages()
   const pageWidth = doc.internal.pageSize.getWidth()
@@ -296,6 +301,9 @@ function buildPdfFromStatement(
   doc.save(filename)
 }
 
+// ---------------------------------------------------------------------------
+// StatementTable — komponen tampilan laporan
+// ---------------------------------------------------------------------------
 function StatementTable({ periodeText, rows, approvalDateText, isStamped }) {
   return (
     <div className="rounded-2xl border border-slate-300 bg-white shadow-sm overflow-hidden">
@@ -304,13 +312,11 @@ function StatementTable({ periodeText, rows, approvalDateText, isStamped }) {
           <div className="flex justify-start">
             <img src={primkoppabriLogo} alt="Logo Primkoppabri" className="h-16 w-16 object-contain" />
           </div>
-
           <div>
-          <p className="text-sm font-bold text-slate-900">KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR</p>
-          <h3 className="text-lg font-bold text-slate-900">Laporan Operasional Bulanan</h3>
-          <p className="mt-0.5 text-sm font-medium text-slate-600">Periode {periodeText}</p>
+            <p className="text-sm font-bold text-slate-900">KSP PRIMKOPPABRI KUSUMA BANGSA KCP GUMELAR</p>
+            <h3 className="text-lg font-bold text-slate-900">Laporan Operasional Bulanan</h3>
+            <p className="mt-0.5 text-sm font-medium text-slate-600">Periode {periodeText}</p>
           </div>
-
           <div className="flex justify-end">
             <img src={pepabriLogo} alt="Logo Pepabri" className="h-16 w-16 object-contain" />
           </div>
@@ -364,6 +370,69 @@ function StatementTable({ periodeText, rows, approvalDateText, isStamped }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// TampilLaporanModal — modal untuk menampilkan hasil laporan (preview saja)
+// ---------------------------------------------------------------------------
+function TampilLaporanModal({ open, onClose, report, statementRows, approvalDateText, isFinalized }) {
+  if (!open || !report) return null
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[10010] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full sm:max-w-3xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 sm:px-6 py-4">
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900">Tampilan Laporan</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Periode {periodText(report.periodeBulan, report.periodeTahun)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            aria-label="Tutup tampilan laporan"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-y-auto px-4 sm:px-6 py-5">
+          <StatementTable
+            periodeText={periodText(report.periodeBulan, report.periodeTahun)}
+            rows={statementRows}
+            approvalDateText={approvalDateText}
+            isStamped={isFinalized}
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 px-5 sm:px-6 py-3 flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            className="h-9 px-5 text-sm"
+          >
+            Tutup
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Row mapping
+// ---------------------------------------------------------------------------
 function mapStatementRows(report) {
   return [
     { type: 'section', label: '1 - Ringkasan Saldo', value: '' },
@@ -383,6 +452,9 @@ function mapStatementRows(report) {
   ]
 }
 
+// ---------------------------------------------------------------------------
+// Main Page
+// ---------------------------------------------------------------------------
 export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }) {
   const { authFetch } = useAuth()
   const toast = useToast()
@@ -392,6 +464,7 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
   const [finalizing, setFinalizing] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
+  const [tampilModalOpen, setTampilModalOpen] = useState(false)
   const [confirmModal, setConfirmModal] = useState({
     open: false,
     title: '',
@@ -400,17 +473,19 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
   })
   const confirmActionRef = useRef(null)
 
+  // -------------------------------------------------------------------------
+  // Fetch laporan
+  // -------------------------------------------------------------------------
   const fetchLaporanKeuangan = useCallback(async (bulan, tahun) => {
     if (!bulan || !tahun) return
     setLoading(true)
     setReport(null)
-
     setError('')
     try {
       const qs = `?bulan=${bulan}&tahun=${tahun}`
       const res = await authFetch(`/api/laporan/keuangan${qs}`)
       const json = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(json?.message || 'Gagal mengambil laporan keuangan')
+      if (!res.ok) throw new Error(parseErrorMessage(json, 'Gagal mengambil laporan keuangan'))
       setReport(normalizeLaporanPayload(json))
     } catch (err) {
       setError(err.message || 'Terjadi kesalahan saat mengambil laporan keuangan')
@@ -423,6 +498,9 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
     fetchLaporanKeuangan(selectedBulan, selectedTahun)
   }, [fetchLaporanKeuangan, selectedBulan, selectedTahun])
 
+  // -------------------------------------------------------------------------
+  // Confirm modal
+  // -------------------------------------------------------------------------
   const openConfirmModal = useCallback((options, action) => {
     confirmActionRef.current = typeof action === 'function' ? action : null
     setConfirmModal({
@@ -444,11 +522,13 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
       closeConfirmModal()
       return
     }
-
     closeConfirmModal()
     await action()
   }, [closeConfirmModal])
 
+  // -------------------------------------------------------------------------
+  // Method fallback helper
+  // -------------------------------------------------------------------------
   const callWithMethodFallback = useCallback(async (url, primaryMethod, fallbackMethod, body) => {
     const request = async (method) => {
       const res = await authFetch(url, {
@@ -469,7 +549,6 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
 
   const isFinalized = String(report?.statusLaporan || '').toUpperCase() === 'FINAL'
 
-
   const resolveSelectedPeriod = () => {
     const bulan = Number.parseInt(String(selectedBulan), 10)
     const tahun = Number.parseInt(String(selectedTahun), 10)
@@ -482,6 +561,9 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
     return { bulan, tahun }
   }
 
+  // -------------------------------------------------------------------------
+  // Generate / cetak laporan
+  // -------------------------------------------------------------------------
   const handleGenerate = async () => {
     setGenerating(true)
     setError('')
@@ -494,12 +576,17 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
         `/api/laporan/keuangan/generate${periodQuery}`,
         'POST',
         'PATCH',
-        {
-          bulan,
-          tahun,
-        }
+        { bulan, tahun }
       )
-      if (!res.ok) throw new Error(json?.message || 'Gagal mencetak laporan keuangan')
+
+      // 403 — tidak punya akses cetak laporan
+      if (res.status === 403) {
+        const msg = parseErrorMessage(json, 'Anda tidak memiliki akses untuk mencetak laporan.')
+        toast.error(msg)
+        return
+      }
+
+      if (!res.ok) throw new Error(parseErrorMessage(json, 'Gagal mencetak laporan keuangan'))
 
       setReport(normalizeLaporanPayload(json))
       toast.success('Laporan berhasil dicetak')
@@ -512,12 +599,16 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Finalize laporan — dengan 403 handling (seperti pola Keanggotaan)
+  // -------------------------------------------------------------------------
   const handleFinalize = async () => {
     setFinalizing(true)
     setError('')
 
     try {
       const { bulan, tahun } = resolveSelectedPeriod()
+
       if (!report?.id) {
         throw new Error('Laporan keuangan belum tersedia untuk finalisasi.')
       }
@@ -533,12 +624,17 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
         `/api/laporan/keuangan/${report.id}/finalize${periodQuery}`,
         'PATCH',
         'POST',
-        {
-          bulan,
-          tahun,
-        }
+        { bulan, tahun }
       )
-      if (!res.ok) throw new Error(json?.message || 'Gagal finalisasi laporan keuangan')
+
+      // 403 — tidak punya akses finalisasi (pola sama seperti Keanggotaan)
+      if (res.status === 403) {
+        const msg = parseErrorMessage(json, 'Anda tidak memiliki akses untuk finalisasi laporan.')
+        toast.error(msg)
+        return
+      }
+
+      if (!res.ok) throw new Error(parseErrorMessage(json, 'Gagal finalisasi laporan keuangan'))
 
       setReport(normalizeLaporanPayload(json))
       toast.success('Laporan berhasil difinalisasi')
@@ -551,12 +647,16 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Download PDF
+  // -------------------------------------------------------------------------
   const handleDownload = async () => {
     if (!report) return
     setDownloading(true)
     try {
       const approvalDateText = formatApprovalDate(resolveApprovalDate(report))
-      const isStamped = String(report?.statusLaporan || '').toUpperCase() === 'FINAL' || String(report?.statusLaporan || '').toUpperCase() === 'PUBLISHED'
+      const isStamped = String(report?.statusLaporan || '').toUpperCase() === 'FINAL'
+        || String(report?.statusLaporan || '').toUpperCase() === 'PUBLISHED'
       const [stampImageDataUrl, leftLogoDataUrl, rightLogoDataUrl] = await Promise.all([
         isStamped ? loadImageAsDataUrl(capKoperasiImage) : Promise.resolve(null),
         loadImageAsDataUrl(primkoppabriLogo),
@@ -577,6 +677,9 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Derived state
+  // -------------------------------------------------------------------------
   const statementRows = useMemo(() => mapStatementRows(report), [report])
   const approvalDateText = useMemo(() => formatApprovalDate(resolveApprovalDate(report)), [report])
 
@@ -585,17 +688,34 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
     ? 'bg-green-100 text-green-700'
     : 'bg-yellow-100 text-yellow-700'
 
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
   return (
     <div className="space-y-5">
       <Toast toasts={toast.toasts} remove={toast.remove} />
 
+      {/* Modal tampilan laporan (preview saja, tidak generate) */}
+      <TampilLaporanModal
+        open={tampilModalOpen}
+        onClose={() => setTampilModalOpen(false)}
+        report={report}
+        statementRows={statementRows}
+        approvalDateText={approvalDateText}
+        isFinalized={isFinalized}
+      />
+
+      {/* Page header + action buttons */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">Laporan</h1>
-          <p className="mt-1 text-xs sm:text-sm text-slate-500">Laporan Operasional Koperasi Periode {periodText(selectedBulan, selectedTahun)}</p>
+          <p className="mt-1 text-xs sm:text-sm text-slate-500">
+            Laporan Operasional Koperasi Periode {periodText(selectedBulan, selectedTahun)}
+          </p>
         </div>
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          {/* Rekapitulasi */}
           <Button
             type="button"
             variant="outline"
@@ -605,6 +725,8 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
             <FileText className="mr-2 h-4 w-4" />
             Rekapitulasi
           </Button>
+
+          {/* Cetak Laporan — generate ulang dari server */}
           <Button
             type="button"
             variant="outline"
@@ -616,9 +738,13 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
             disabled={loading || generating || finalizing || isFinalized}
             className="w-full sm:w-auto h-10"
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${generating ? 'animate-spin' : ''}`} />
+            {generating
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <RefreshCw className="mr-2 h-4 w-4" />}
             {generating ? 'Mencetak...' : 'Cetak Laporan'}
           </Button>
+
+          {/* Finalize Laporan */}
           <Button
             type="button"
             variant="outline"
@@ -630,38 +756,52 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
             disabled={loading || generating || finalizing || isFinalized || !report}
             className="w-full sm:w-auto h-10"
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${finalizing ? 'animate-spin' : ''}`} />
+            {finalizing
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <RefreshCw className="mr-2 h-4 w-4" />}
             {finalizing ? 'Finalizing...' : (isFinalized ? 'Sudah Final' : 'Finalize Laporan')}
           </Button>
+
+          {/* Download PDF */}
           <Button
             type="button"
             onClick={handleDownload}
             disabled={loading || downloading || !report}
             className="w-full sm:w-auto h-10 bg-[#0A2472] hover:bg-[#081d5e]"
           >
-            <Download className="mr-2 h-4 w-4" />
+            {downloading
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <Download className="mr-2 h-4 w-4" />}
             {downloading ? 'Menyiapkan...' : 'Download Laporan Bulanan'}
           </Button>
         </div>
       </div>
 
+      {/* Error banner */}
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
 
+      {/* Report content */}
       {!error && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
           {loading ? (
-            <p className="text-sm text-slate-500">Memuat laporan keuangan...</p>
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Memuat laporan keuangan...</span>
+            </div>
           ) : !report ? (
             <p className="text-sm text-slate-500">Data laporan keuangan belum tersedia.</p>
           ) : (
             <div className="space-y-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-500">
-                  Periode: <span className="font-semibold text-slate-800">{periodText(report.periodeBulan, report.periodeTahun)}</span>
+                  Periode:{' '}
+                  <span className="font-semibold text-slate-800">
+                    {periodText(report.periodeBulan, report.periodeTahun)}
+                  </span>
                 </p>
                 <span className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass}`}>
                   {status}
@@ -679,6 +819,7 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
         </div>
       )}
 
+      {/* Confirm modal */}
       {confirmModal.open && createPortal(
         <div
           className="fixed inset-0 z-[10010] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -689,9 +830,7 @@ export default function LaporanPage({ onNavigate, selectedBulan, selectedTahun }
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">{confirmModal.title}</h2>
-              </div>
+              <h2 className="text-base font-semibold text-slate-900">{confirmModal.title}</h2>
               <button
                 type="button"
                 aria-label="Tutup konfirmasi"
