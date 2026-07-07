@@ -1242,6 +1242,7 @@ function toNasabahOption(item) {
         await fetchAllTransactions()
       } catch (err) {
         setInstallmentError(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat angsuran'))
+        toast.error(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat angsuran'))
         throw err
       } finally {
         setInstallmentSubmitting(false)
@@ -1383,6 +1384,7 @@ function toNasabahOption(item) {
         await fetchAllTransactions()
       } catch (err) {
         setSavingsError(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat setoran'))
+        toast.error(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat setoran'))
         throw err
       } finally {
         setSavingsSubmitting(false)
@@ -1535,6 +1537,7 @@ function toNasabahOption(item) {
         await fetchAllTransactions()
       } catch (err) {
         setWithdrawalError(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat penarikan'))
+        toast.error(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat penarikan'))
         throw err
       } finally {
         setWithdrawalSubmitting(false)
