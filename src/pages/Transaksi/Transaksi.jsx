@@ -158,41 +158,17 @@ function resolvePinjamanReferenceId(tx) {
   )
 }
 
-function normalizeSettingKey(setting) {
-  return String(setting?.key || '')
-    .trim()
-    .toLowerCase()
-}
-
-function isMinTenorSetting(setting) {
-  const key = normalizeSettingKey(setting)
-  if (key === 'loan.mintenormonths') return true
-
-  const text = `${setting?.key || ''} ${setting?.description || ''}`.toLowerCase()
-  return /(tenor|bulan|pinjaman)/.test(text) && /\b(min|minimal|minimum)\b/.test(text)
-}
-
-function isMaxTenorSetting(setting) {
-  const key = normalizeSettingKey(setting)
-  if (key === 'loan.maxtenormonths') return true
-
-  const text = `${setting?.key || ''} ${setting?.description || ''}`.toLowerCase()
-  return /(tenor|bulan|pinjaman)/.test(text) && /\b(max|maks|maksimal|maximum|atas|tertinggi)\b/.test(text)
-}
-
-function getTenorBounds(settings) {
-  const rows = Array.isArray(settings) ? settings : []
-  const minSetting = rows.find((item) => isMinTenorSetting(item))
-  const maxSetting = rows.find((item) => isMaxTenorSetting(item))
-
-  const minValue = String(minSetting?.value ?? '').trim()
-  const maxValue = String(maxSetting?.value ?? '').trim()
-
-  return {
-    minValue,
-    maxValue,
-    hasBounds: Boolean(minValue || maxValue),
+function normalizeResponseMessage(message, fallback) {
+  if (Array.isArray(message)) {
+    const text = message.map((item) => String(item).trim()).filter(Boolean).join(', ')
+    return text || fallback
   }
+
+  if (typeof message === 'string' && message.trim()) {
+    return message.trim()
+  }
+
+  return fallback
 }
 
 function formatCurrency(value) {
@@ -342,7 +318,7 @@ export default function Transaksi({ onNavigate }) {
   // ─── paginated data store ─────────────────────────────────────────────────
   const [transactions, setTransactions] = useState([])
   const [pageIndex, setPageIndex] = useState(1)
-  const [actionMenuOpenId, setActionMenuOpenId] = useState('')
+  const [, setActionMenuOpenId] = useState('')
   const [pendingVerificationCount, setPendingVerificationCount] = useState(0)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -401,7 +377,6 @@ function toNasabahOption(item) {
   const [loanNasabahId, setLoanNasabahId] = useState('')
   const [loanAmount, setLoanAmount] = useState('')
   const [loanTenor, setLoanTenor] = useState('')
-  const [loanTenorBounds, setLoanTenorBounds] = useState({ minValue: '', maxValue: '', hasBounds: false })
   const [loanNasabahSearch, setLoanNasabahSearch] = useState('')
   const [loanSubmitting, setLoanSubmitting] = useState(false)
   const [loanError, setLoanError] = useState('')
@@ -613,18 +588,6 @@ function toNasabahOption(item) {
     }
   }, [authFetch])
 
-  const fetchTenorBounds = useCallback(async () => {
-    try {
-      const res = await authFetch('/api/settings')
-      const json = await res.json().catch(() => null)
-      if (!res.ok) return { minValue: '', maxValue: '', hasBounds: false }
-
-      return getTenorBounds(toArray(json?.data ?? json))
-    } catch {
-      return { minValue: '', maxValue: '', hasBounds: false }
-    }
-  }, [authFetch])
-
   const fetchAllTransactions = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -806,12 +769,6 @@ function toNasabahOption(item) {
       return
     }
 
-    // Close any add-transaction modal first so loading state appears only in confirmation modal.
-    setIsLoanModalOpen(false)
-    setIsInstallmentModalOpen(false)
-    setIsSavingsModalOpen(false)
-    setIsWithdrawalModalOpen(false)
-
     setConfirmationSubmitting(true)
     try {
       await action()
@@ -875,13 +832,9 @@ function toNasabahOption(item) {
     setLoanAmount('')
     setLoanTenor('')
     setLoanNasabahSearch('')
-    setLoanTenorBounds({ minValue: '', maxValue: '', hasBounds: false })
 
     try {
-      const [res, bounds] = await Promise.all([
-        authFetch('/api/nasabah'),
-        fetchTenorBounds(),
-      ])
+      const res = await authFetch('/api/nasabah')
       const json = await res.json().catch(() => null)
       if (!res.ok) {
         throw new Error(json?.message || 'Gagal mengambil data nasabah')
@@ -894,14 +847,13 @@ function toNasabahOption(item) {
         .map((item) => toNasabahOption(item))
 
       setActiveNasabahOptions(options)
-      setLoanTenorBounds(bounds)
       setIsLoanModalOpen(true)
     } catch (err) {
       setLoanError(err?.message || 'Terjadi kesalahan saat memuat nasabah aktif')
       setIsLoanModalOpen(true)
       setActiveNasabahOptions([])
     }
-  }, [authFetch, fetchTenorBounds])
+  }, [authFetch])
 
   const openInstallmentModal = useCallback(async () => {
     setInstallmentError('')
@@ -1096,29 +1048,22 @@ function toNasabahOption(item) {
     const nasabahId = Number(loanNasabahId)
     const jumlahPinjaman = Number(loanAmount)
     const tenorBulan = Number(loanTenor)
-    const minTenor = Number(loanTenorBounds.minValue)
-    const maxTenor = Number(loanTenorBounds.maxValue)
-    const hasMinTenor = Number.isInteger(minTenor) && minTenor > 0
-    const hasMaxTenor = Number.isInteger(maxTenor) && maxTenor > 0
+
+    const failLoan = (message) => {
+      setLoanError(message)
+      toast.error(message)
+    }
 
     if (!Number.isInteger(nasabahId) || nasabahId <= 0) {
-      setLoanError('Pilih anggota aktif terlebih dahulu.')
+      failLoan('Pilih anggota aktif terlebih dahulu.')
       return
     }
     if (!Number.isFinite(jumlahPinjaman) || jumlahPinjaman <= 0) {
-      setLoanError('Jumlah pencairan harus lebih besar dari 0.')
+      failLoan('Jumlah pencairan harus lebih besar dari 0.')
       return
     }
     if (!Number.isInteger(tenorBulan) || tenorBulan <= 0) {
-      setLoanError('Tenor bulan harus berupa angka bulat lebih besar dari 0.')
-      return
-    }
-    if (hasMinTenor && tenorBulan < minTenor) {
-      setLoanError(`Tenor bulan minimal ${minTenor} bulan.`)
-      return
-    }
-    if (hasMaxTenor && tenorBulan > maxTenor) {
-      setLoanError(`Tenor bulan maksimal ${maxTenor} bulan.`)
+      failLoan('Tenor bulan harus berupa angka bulat lebih besar dari 0.')
       return
     }
 
@@ -1143,18 +1088,18 @@ function toNasabahOption(item) {
         })
         const json = await res.json().catch(() => null)
         if (!res.ok) {
-          throw new Error(json?.message || 'Gagal menambahkan pencairan')
+          throw new Error(normalizeResponseMessage(json?.message, 'Gagal menambahkan pencairan'))
         }
 
         const createdLoan = resolveLoanFromCreateResponse(json)
         const createdLoanId = resolveLoanId(createdLoan)
         const createdLoanStatus = resolveLoanStatus(createdLoan, json)
 
-        let successMessage = json?.message || 'Pengajuan pencairan berhasil dibuat'
+        let successMessage = normalizeResponseMessage(json?.message, 'Pengajuan pencairan berhasil dibuat')
 
         if (isApprovedLoanStatus(createdLoanStatus)) {
           if (!Number.isInteger(createdLoanId) || createdLoanId <= 0) {
-            throw new Error('Pengajuan berhasil, tetapi pencairan otomatis gagal karena ID pinjaman tidak ditemukan.')
+            throw new Error('Pegawai Tidak Aktif')
           }
 
           const pencairanRes = await authFetch(`/api/pinjaman/${createdLoanId}/pencairan`, {
@@ -1169,11 +1114,11 @@ function toNasabahOption(item) {
 
           if (!pencairanRes.ok) {
             throw new Error(
-              `Pengajuan berhasil, tetapi pencairan otomatis gagal: ${pencairanJson?.message || 'Gagal memproses pencairan pinjaman'}`
+              `Pengajuan berhasil, tetapi pencairan otomatis gagal: ${normalizeResponseMessage(pencairanJson?.message, 'Gagal memproses pencairan pinjaman')}`
             )
           }
 
-          successMessage = pencairanJson?.message || 'Pencairan otomatis berhasil diproses'
+          successMessage = normalizeResponseMessage(pencairanJson?.message, 'Pencairan otomatis berhasil diproses')
         }
 
         setLoanSuccess(successMessage)
@@ -1181,7 +1126,9 @@ function toNasabahOption(item) {
         await fetchAllTransactions()
         await fetchPendingVerificationCount()
       } catch (err) {
-        setLoanError(err?.message || 'Terjadi kesalahan saat membuat pencairan')
+        const message = normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat pencairan')
+        setLoanError(message)
+        toast.error(message)
         throw err
       } finally {
         setLoanSubmitting(false)
@@ -1192,11 +1139,10 @@ function toNasabahOption(item) {
     loanNasabahId,
     loanAmount,
     loanTenor,
-    loanTenorBounds.minValue,
-    loanTenorBounds.maxValue,
     fetchAllTransactions,
     fetchPendingVerificationCount,
     activeNasabahOptions,
+    toast,
     showConfirmationModal,
   ])
 
@@ -1241,14 +1187,14 @@ function toNasabahOption(item) {
         })
         const json = await res.json().catch(() => null)
         if (!res.ok) {
-          throw new Error(json?.message || 'Gagal menambahkan angsuran')
+          throw new Error(normalizeResponseMessage(json?.message, 'Gagal menambahkan angsuran'))
         }
 
-        setInstallmentSuccess(json?.message || 'Transaksi berhasil diproses')
+        setInstallmentSuccess(normalizeResponseMessage(json?.message, 'Transaksi berhasil diproses'))
         setIsInstallmentModalOpen(false)
         await fetchAllTransactions()
       } catch (err) {
-        setInstallmentError(err?.message || 'Terjadi kesalahan saat membuat angsuran')
+        setInstallmentError(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat angsuran'))
         throw err
       } finally {
         setInstallmentSubmitting(false)
@@ -1361,14 +1307,14 @@ function toNasabahOption(item) {
         })
         const json = await res.json().catch(() => null)
         if (!res.ok) {
-          throw new Error(json?.message || 'Gagal menambahkan setoran')
+          throw new Error(normalizeResponseMessage(json?.message, 'Gagal menambahkan setoran'))
         }
 
-        setSavingsSuccess(json?.message || 'Transaksi berhasil diproses')
+        setSavingsSuccess(normalizeResponseMessage(json?.message, 'Transaksi berhasil diproses'))
         setIsSavingsModalOpen(false)
         await fetchAllTransactions()
       } catch (err) {
-        setSavingsError(err?.message || 'Terjadi kesalahan saat membuat setoran')
+        setSavingsError(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat setoran'))
         throw err
       } finally {
         setSavingsSubmitting(false)
@@ -1493,14 +1439,14 @@ function toNasabahOption(item) {
         })
         const json = await res.json().catch(() => null)
         if (!res.ok) {
-          throw new Error(json?.message || 'Gagal menambahkan penarikan')
+          throw new Error(normalizeResponseMessage(json?.message, 'Gagal menambahkan penarikan'))
         }
 
-        setWithdrawalSuccess(json?.message || 'Transaksi berhasil diproses')
+        setWithdrawalSuccess(normalizeResponseMessage(json?.message, 'Transaksi berhasil diproses'))
         setIsWithdrawalModalOpen(false)
         await fetchAllTransactions()
       } catch (err) {
-        setWithdrawalError(err?.message || 'Terjadi kesalahan saat membuat penarikan')
+        setWithdrawalError(normalizeResponseMessage(err?.message, 'Terjadi kesalahan saat membuat penarikan'))
         throw err
       } finally {
         setWithdrawalSubmitting(false)
@@ -2193,8 +2139,7 @@ function toNasabahOption(item) {
                 <Input
                   type="number"
                   inputMode="numeric"
-                  min={loanTenorBounds.minValue || undefined}
-                  max={loanTenorBounds.maxValue || undefined}
+                  min="1"
                   step="1"
                   value={loanTenor}
                   onChange={(e) => setLoanTenor(e.target.value)}
@@ -2202,9 +2147,7 @@ function toNasabahOption(item) {
                   placeholder="Masukkan jumlah bulan"
                 />
                 <p className="text-xs text-slate-500">
-                  {loanTenorBounds.hasBounds
-                    ? `Minimal ${loanTenorBounds.minValue || '-'} bulan dan maksimal ${loanTenorBounds.maxValue || '-'} bulan.`
-                    : 'Batas tenor diambil dari pengaturan. Jika belum ada, masukkan angka bulat lebih dari 0.'}
+                  Masukkan tenor sebagai angka bulat dalam bulan.
                 </p>
               </div>
 

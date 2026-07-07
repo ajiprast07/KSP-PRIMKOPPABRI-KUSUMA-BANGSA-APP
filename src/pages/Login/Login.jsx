@@ -6,6 +6,72 @@ import { Label } from '@/components/ui/label'
 import { loginUser } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 
+function isActiveValue(value) {
+  if (typeof value === 'boolean') return value
+
+  const normalized = String(value || '').trim().toUpperCase()
+  if (!normalized) return null
+  if (['TRUE'].includes(normalized)) return true
+  if (['FALSE'].includes(normalized)) return false
+  return null
+}
+
+function resolveAccessToken(payload) {
+  const source = payload?.data ?? payload ?? {}
+  const candidates = [
+    source?.accessToken,
+    source?.token,
+    source?.access_token,
+    source?.user?.accessToken,
+    source?.user?.token,
+    source?.user?.access_token,
+    payload?.accessToken,
+    payload?.token,
+    payload?.access_token,
+  ]
+
+  return candidates.map((value) => String(value || '').trim()).find((value) => value) || ''
+}
+
+function resolveAccountActiveStatus(payload) {
+  const candidates = []
+  const pushSource = (source) => {
+    if (!source || typeof source !== 'object') return
+
+    candidates.push(
+      source?.isActive,
+      source?.statusAktif,
+      source?.aktif,
+      source?.status,
+      source?.accountStatus,
+    )
+
+    if (source?.user && typeof source.user === 'object') {
+      candidates.push(
+        source.user.isActive,
+        source.user.statusAktif,
+        source.user.aktif,
+        source.user.status,
+        source.user.accountStatus,
+      )
+    }
+  }
+
+  pushSource(payload)
+  pushSource(payload?.data)
+  pushSource(payload?.user)
+  pushSource(payload?.data?.user)
+  pushSource(payload?.profile)
+  pushSource(payload?.profile?.user)
+
+  for (const candidate of candidates) {
+    const normalized = isActiveValue(candidate)
+    if (normalized !== null) return normalized
+  }
+
+  return null
+}
+
 export default function Login({ onLoginSuccess }) {
   const { login } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
@@ -20,7 +86,26 @@ export default function Login({ onLoginSuccess }) {
     setLoading(true)
     try {
       const data = await loginUser({ usernameOrEmail, password })
+
+      const accessToken = resolveAccessToken(data)
+      if (!accessToken) {
+        throw new Error('Gagal memverifikasi status akun.')
+      }
+
+      const profileRes = await fetch('/api/profile', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+      const profileJson = await profileRes.json().catch(() => null)
+      const profileStatus = resolveAccountActiveStatus(profileJson)
+
+      if (profileStatus !== true) {
+        throw new Error('Akun tidak bisa login karena status tidak aktif.')
+      }
+
       login(data)
+
       onLoginSuccess?.()
     } catch (err) {
       setError(err.message || 'Login gagal. Coba lagi.')

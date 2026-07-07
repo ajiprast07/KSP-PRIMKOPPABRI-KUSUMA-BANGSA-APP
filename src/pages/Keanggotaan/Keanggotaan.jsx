@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef } from 'react'
+﻿import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Search, Plus, Pencil, MoreVertical, Info,
@@ -22,6 +22,15 @@ const canVerifyByStatus = (status) => ['PENDING', 'DITOLAK'].includes(String(sta
 const PAGE_LIMIT = 20
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_PROXY_TARGET || ''
 
+// --- Helper: parse error message from BE response json ---
+function parseErrorMessage(json, fallback) {
+  if (fallback) return fallback
+  if (!json) return 'Terjadi kesalahan.'
+  const raw = json?.message ?? json?.error ?? json?.detail ?? ''
+  if (Array.isArray(raw)) return raw.join(', ') || 'Terjadi kesalahan.'
+  return String(raw || '').trim() || 'Terjadi kesalahan.'
+}
+
 function toArray(data) {
   if (Array.isArray(data)) return data
   if (Array.isArray(data?.items)) return data.items
@@ -30,12 +39,24 @@ function toArray(data) {
   return []
 }
 
+// Untuk keperluan internal: mapping, sorting, perbandingan
 function normalizeJenisDokumen(jenis = '') {
   const value = String(jenis).toUpperCase().replace(/\s+/g, '_')
   if (value.includes('KTP')) return 'KTP'
   if (value === 'KK' || value.includes('KARTU_KELUARGA')) return 'KK'
   if (value.includes('SLIP') && value.includes('GAJI')) return 'SLIP_GAJI'
   return value
+}
+
+// Untuk tampilan UI: mengubah key internal menjadi label yang rapi
+function displayJenisDokumen(jenis = '') {
+  const normalized = normalizeJenisDokumen(jenis)
+  const labels = {
+    KTP: 'KTP',
+    KK: 'KK',
+    SLIP_GAJI: 'SLIP GAJI',
+  }
+  return labels[normalized] ?? String(jenis).replace(/_/g, ' ')
 }
 
 function sortDokumenByPriority(list = []) {
@@ -121,6 +142,42 @@ function toDateInputValue(value) {
   return `${year}-${month}-${day}`
 }
 
+function SelectedFilePreview({ file, label }) {
+  const previewUrl = useMemo(() => {
+    if (!file) return ''
+    return URL.createObjectURL(file)
+  }, [file])
+
+  useEffect(() => {
+    if (!previewUrl) return undefined
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [previewUrl])
+
+  if (!file) return null
+
+  const isImage = String(file.type || '').toLowerCase().startsWith('image/')
+    || /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(file.name)
+
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 space-y-2">
+      <p className="text-xs font-medium text-gray-600">{label}</p>
+      {isImage ? (
+        <img
+          src={previewUrl}
+          alt={label}
+          className="w-full max-h-56 rounded-md border border-gray-100 bg-white object-contain"
+        />
+      ) : (
+        <div className="rounded-md border border-dashed border-gray-200 bg-white px-3 py-4 text-center">
+          <p className="text-sm font-medium text-gray-800">Pratinjau tidak tersedia</p>
+          <p className="text-xs text-gray-500 mt-1">File ini bukan gambar.</p>
+        </div>
+      )}
+      <p className="text-[11px] text-gray-500 truncate">{file.name}</p>
+    </div>
+  )
+}
+
 function DokumenPreviewModal({ open, onClose, dokumen }) {
   if (!open || !dokumen?.fileUrl) return null
 
@@ -138,7 +195,7 @@ function DokumenPreviewModal({ open, onClose, dokumen }) {
       >
         <div className="px-4 sm:px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{dokumen.jenisDokumen || 'Dokumen'}</p>
+            <p className="text-sm font-semibold text-gray-900 truncate">{displayJenisDokumen(dokumen.jenisDokumen) || 'Dokumen'}</p>
           </div>
           <button
             type="button"
@@ -153,12 +210,12 @@ function DokumenPreviewModal({ open, onClose, dokumen }) {
           {isImage ? (
             <img
               src={resolvedUrl}
-              alt={dokumen.jenisDokumen || 'Dokumen Anggota'}
+              alt={displayJenisDokumen(dokumen.jenisDokumen) || 'Dokumen Anggota'}
               className="w-full h-full object-contain rounded-lg bg-white border border-gray-100"
             />
           ) : (
             <iframe
-              title={dokumen.jenisDokumen || 'Dokumen Anggota'}
+              title={displayJenisDokumen(dokumen.jenisDokumen) || 'Dokumen Anggota'}
               src={resolvedUrl}
               className="w-full h-full rounded-lg bg-white border border-gray-100"
             />
@@ -329,7 +386,8 @@ function MemberCard({ member, onDetail, onVerify, onEdit }) {
   )
 }
 
-function TambahAnggotaModal({ open, onClose, onAdded }) {
+// --- TambahAnggotaModal ---
+function TambahAnggotaModal({ open, onClose, onAdded, onError }) {
   const { authFetch } = useAuth()
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
@@ -432,12 +490,13 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
     })
 
     const json = await res.json().catch(() => null)
-    const message = Array.isArray(json?.message)
-      ? json.message.join(', ')
-      : (json?.message || '')
+
+    if (res.status === 403) {
+      throw new Error(parseErrorMessage(json, 'Anda tidak memiliki izin untuk mengunggah dokumen anggota.'))
+    }
 
     if (!res.ok) {
-      throw new Error(message || 'Gagal upload dokumen anggota')
+      throw new Error(parseErrorMessage(json, 'Gagal upload dokumen anggota.'))
     }
 
     return json?.data ?? []
@@ -452,20 +511,13 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
     }
 
     const ktpValidation = validateDokumenFileType('KTP', files.ktp)
-    if (!ktpValidation.ok) {
-      setApiError(ktpValidation.message)
-      return
-    }
+    if (!ktpValidation.ok) { setApiError(ktpValidation.message); return }
+
     const kkValidation = validateDokumenFileType('KK', files.kk)
-    if (!kkValidation.ok) {
-      setApiError(kkValidation.message)
-      return
-    }
+    if (!kkValidation.ok) { setApiError(kkValidation.message); return }
+
     const slipValidation = validateDokumenFileType('SLIP_GAJI', files.slipGaji)
-    if (!slipValidation.ok) {
-      setApiError(slipValidation.message)
-      return
-    }
+    if (!slipValidation.ok) { setApiError(slipValidation.message); return }
 
     const validation = validateStep1()
     if (!validation.ok) {
@@ -492,8 +544,18 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
           tanggalLahir: form.tanggalLahir,
         }),
       })
-      const createJson = await createRes.json()
-      if (!createRes.ok) throw new Error(createJson.message || 'Gagal menambahkan anggota')
+      const createJson = await createRes.json().catch(() => null)
+
+      if (createRes.status === 403) {
+        const msg = parseErrorMessage(createJson, 'Anda tidak memiliki izin untuk menambahkan anggota.')
+        onError?.(msg)
+        onClose()
+        return
+      }
+
+      if (!createRes.ok) {
+        throw new Error(parseErrorMessage(createJson, 'Gagal menambahkan anggota.'))
+      }
 
       nasabahId = createJson.data?.id
       if (!nasabahId) throw new Error('ID anggota tidak ditemukan.')
@@ -620,16 +682,19 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
               <Label>Upload KTP</Label>
               <Input type="file" accept="image/*,.pdf" onChange={(e) => setFiles((p) => ({ ...p, ktp: e.target.files?.[0] ?? null }))} className="h-10" />
               {files.ktp && <p className="text-[11px] text-gray-500">Dipilih: {files.ktp.name}</p>}
+              <SelectedFilePreview file={files.ktp} label="Pratinjau KTP" />
             </div>
             <div className="space-y-1.5">
               <Label>Upload KK</Label>
               <Input type="file" accept="image/*,.pdf" onChange={(e) => setFiles((p) => ({ ...p, kk: e.target.files?.[0] ?? null }))} className="h-10" />
               {files.kk && <p className="text-[11px] text-gray-500">Dipilih: {files.kk.name}</p>}
+              <SelectedFilePreview file={files.kk} label="Pratinjau KK" />
             </div>
             <div className="space-y-1.5">
               <Label>Upload Slip Gaji (Opsional)</Label>
               <Input type="file" accept="image/*,.pdf" onChange={(e) => setFiles((p) => ({ ...p, slipGaji: e.target.files?.[0] ?? null }))} className="h-10" />
               {files.slipGaji && <p className="text-[11px] text-gray-500">Dipilih: {files.slipGaji.name}</p>}
+              <SelectedFilePreview file={files.slipGaji} label="Pratinjau Slip Gaji" />
             </div>
 
             {apiError && <p className="text-sm text-red-500">{apiError}</p>}
@@ -649,7 +714,8 @@ function TambahAnggotaModal({ open, onClose, onAdded }) {
   )
 }
 
-function EditAnggotaModal({ member, open, onClose, onUpdated }) {
+// --- EditAnggotaModal ---
+function EditAnggotaModal({ member, open, onClose, onUpdated, onError }) {
   const { authFetch } = useAuth()
   const [submitting, setSubmitting] = useState(false)
   const [apiError, setApiError] = useState('')
@@ -734,7 +800,6 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
         if (!res.ok) return
         if (cancelled) return
         const fetched = json?.data ?? {}
-        // Update form with latest member detail from server (if available)
         setForm((prev) => ({
           ...prev,
           nama: fetched.nama ?? prev.nama,
@@ -755,9 +820,7 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
     }
 
     fetchLatestDokumen()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [open, member, authFetch, syncExistingDokumen])
 
   const handleChange = (e) => {
@@ -769,24 +832,14 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
     if (!file) return
 
     const validation = validateDokumenFileType(jenisDokumen, file)
-    if (!validation.ok) {
-      throw new Error(validation.message)
-    }
+    if (!validation.ok) throw new Error(validation.message)
 
-    const legacyField = jenisDokumen === 'KTP'
-      ? 'ktp'
-      : jenisDokumen === 'KK'
-        ? 'kk'
-        : 'file'
+    const legacyField = jenisDokumen === 'KTP' ? 'ktp' : jenisDokumen === 'KK' ? 'kk' : 'file'
 
     const send = async (method, fieldName) => {
       const formData = new FormData()
       formData.append(fieldName, file)
-
-      const res = await authFetch(`/api/nasabah/${nasabahId}/dokumen/${jenisDokumen}`, {
-        method,
-        body: formData,
-      })
+      const res = await authFetch(`/api/nasabah/${nasabahId}/dokumen/${jenisDokumen}`, { method, body: formData })
       const json = await res.json().catch(() => null)
       return { res, json }
     }
@@ -799,25 +852,22 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
       return result
     }
 
-    // Endpoint edit dokumen terbaru umumnya memakai field tunggal "file".
     let result = await executeWithField('file')
-
-    // Untuk KTP/KK, fallback ke field spesifik jika backend memerlukannya.
-    // SLIP_GAJI dipaksa pakai field "file" agar tidak kena error Unexpected field - slipGaji.
     if (!result.res.ok && legacyField !== 'file') {
       result = await executeWithField(legacyField)
     }
 
+    if (result.res.status === 403) {
+      throw new Error(parseErrorMessage(result.json, `Anda tidak memiliki izin untuk memperbarui dokumen ${displayJenisDokumen(jenisDokumen)}.`))
+    }
+
     if (!result.res.ok) {
-      const msg = Array.isArray(result.json?.message) ? result.json.message.join(', ') : result.json?.message
-      throw new Error(msg || `Gagal memperbarui dokumen ${jenisDokumen}`)
+      throw new Error(parseErrorMessage(result.json, `Gagal memperbarui dokumen ${displayJenisDokumen(jenisDokumen)}.`))
     }
   }, [authFetch])
 
   const validateForm = useCallback(() => {
-    if (!form.nama.trim()) {
-      return { ok: false, message: 'Nama wajib diisi.' }
-    }
+    if (!form.nama.trim()) return { ok: false, message: 'Nama wajib diisi.' }
 
     const penghasilanRaw = String(form.penghasilanBulanan ?? '').trim()
     const penghasilanNormalized = penghasilanRaw.replace(/\./g, '').replace(',', '.')
@@ -833,10 +883,7 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
     e.preventDefault()
 
     const validation = validateForm()
-    if (!validation.ok) {
-      setApiError(validation.message)
-      return
-    }
+    if (!validation.ok) { setApiError(validation.message); return }
 
     const { penghasilanNumber } = validation
 
@@ -852,34 +899,40 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
         catatan: form.catatan.trim(),
       }
 
-      if (form.penghasilanBulanan) {
-        payload.penghasilanBulanan = penghasilanNumber
-      }
-
-      if (form.tanggalLahir) {
-        payload.tanggalLahir = form.tanggalLahir
-      }
-
-      if (form.pegawaiId) {
-        payload.pegawaiId = Number(form.pegawaiId)
-      }
+      if (form.penghasilanBulanan) payload.penghasilanBulanan = penghasilanNumber
+      if (form.tanggalLahir) payload.tanggalLahir = form.tanggalLahir
+      if (form.pegawaiId) payload.pegawaiId = Number(form.pegawaiId)
 
       const res = await authFetch(`/api/nasabah/${member.id}`, {
         method: 'PATCH',
         body: JSON.stringify(payload),
       })
-
       const json = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(json?.message || 'Gagal memperbarui data anggota')
 
-      // Update status only when member status is not locked (PENDING/DITOLAK).
+      if (res.status === 403) {
+        const msg = parseErrorMessage(json, 'Anda tidak memiliki izin untuk mengubah data anggota ini.')
+        onError?.(msg)
+        onClose()
+        return
+      }
+
+      if (!res.ok) throw new Error(parseErrorMessage(json, 'Gagal memperbarui data anggota.'))
+
       if (!isStatusLocked && form.status && form.status !== 'PENDING' && form.status !== member.status) {
         const statusRes = await authFetch(`/api/nasabah/${member.id}/status`, {
           method: 'PATCH',
           body: JSON.stringify({ status: form.status }),
         })
         const statusJson = await statusRes.json().catch(() => null)
-        if (!statusRes.ok) throw new Error(statusJson?.message || 'Gagal memperbarui status anggota')
+
+        if (statusRes.status === 403) {
+          const msg = parseErrorMessage(statusJson, 'Anda tidak memiliki izin untuk mengubah status anggota.')
+          onError?.(msg)
+          onClose()
+          return
+        }
+
+        if (!statusRes.ok) throw new Error(parseErrorMessage(statusJson, 'Gagal memperbarui status anggota.'))
       }
 
       await updateDokumenByJenis(member.id, 'KTP', editFiles.ktp)
@@ -889,7 +942,7 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
       onUpdated()
       onClose()
     } catch (err) {
-      setApiError(err.message || 'Terjadi kesalahan saat memperbarui data anggota')
+      setApiError(err.message || 'Terjadi kesalahan saat memperbarui data anggota.')
     } finally {
       setSubmitting(false)
     }
@@ -921,61 +974,23 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Nama</Label>
-              <Input
-                name="nama"
-                value={form.nama}
-                onChange={handleChange}
-                placeholder="Nama lengkap anggota"
-                className="h-10"
-                disabled={submitting}
-              />
+              <Input name="nama" value={form.nama} onChange={handleChange} placeholder="Nama lengkap anggota" className="h-10" disabled={submitting} />
             </div>
             <div className="space-y-1.5">
               <Label>No. HP</Label>
-              <Input
-                name="noHp"
-                value={form.noHp}
-                onChange={handleChange}
-                placeholder="0812xxxxxx"
-                className="h-10"
-                disabled={submitting}
-              />
+              <Input name="noHp" value={form.noHp} onChange={handleChange} placeholder="0812xxxxxx" className="h-10" disabled={submitting} />
             </div>
             <div className="space-y-1.5">
               <Label>Pekerjaan</Label>
-              <Input
-                name="pekerjaan"
-                value={form.pekerjaan}
-                onChange={handleChange}
-                placeholder="Wiraswasta"
-                className="h-10"
-                disabled={submitting}
-              />
+              <Input name="pekerjaan" value={form.pekerjaan} onChange={handleChange} placeholder="Wiraswasta" className="h-10" disabled={submitting} />
             </div>
             <div className="space-y-1.5">
               <Label>Penghasilan Bulanan</Label>
-              <Input
-                name="penghasilanBulanan"
-                type="number"
-                min={0}
-                step="1000"
-                value={form.penghasilanBulanan}
-                onChange={handleChange}
-                placeholder="5000000"
-                className="h-10"
-                disabled={submitting}
-              />
+              <Input name="penghasilanBulanan" type="number" min={0} step="1000" value={form.penghasilanBulanan} onChange={handleChange} placeholder="5000000" className="h-10" disabled={submitting} />
             </div>
             <div className="space-y-1.5">
               <Label>Tanggal Lahir</Label>
-              <Input
-                name="tanggalLahir"
-                type="date"
-                value={form.tanggalLahir}
-                onChange={handleChange}
-                className="h-10"
-                disabled={submitting}
-              />
+              <Input name="tanggalLahir" type="date" value={form.tanggalLahir} onChange={handleChange} className="h-10" disabled={submitting} />
             </div>
             <div className="space-y-1.5">
               <Label>Petugas Penanggung Jawab</Label>
@@ -988,33 +1003,17 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
               >
                 <option value="">{loadingPegawai ? 'Memuat pegawai...' : 'Pilih Pegawai'}</option>
                 {pegawaiList.map((pegawai) => (
-                  <option key={pegawai.id} value={pegawai.id}>
-                    {pegawai.nama}
-                  </option>
+                  <option key={pegawai.id} value={pegawai.id}>{pegawai.nama}</option>
                 ))}
               </select>
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Instansi</Label>
-              <Input
-                name="instansi"
-                value={form.instansi}
-                onChange={handleChange}
-                placeholder="Nama instansi"
-                className="h-10"
-                disabled={submitting}
-              />
+              <Input name="instansi" value={form.instansi} onChange={handleChange} placeholder="Nama instansi" className="h-10" disabled={submitting} />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Alamat</Label>
-              <Input
-                name="alamat"
-                value={form.alamat}
-                onChange={handleChange}
-                placeholder="Alamat lengkap"
-                className="h-10"
-                disabled={submitting}
-              />
+              <Input name="alamat" value={form.alamat} onChange={handleChange} placeholder="Alamat lengkap" className="h-10" disabled={submitting} />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Catatan</Label>
@@ -1027,28 +1026,17 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
                 disabled={submitting}
               />
             </div>
-
           </div>
 
           <div className="pt-4 border-t border-gray-200 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Ganti Dokumen KTP</Label>
-                <Input
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) => setEditFiles((p) => ({ ...p, ktp: e.target.files?.[0] ?? null }))}
-                  className="h-10"
-                  disabled={submitting}
-                />
+                <Input type="file" accept="image/*,.pdf" onChange={(e) => setEditFiles((p) => ({ ...p, ktp: e.target.files?.[0] ?? null }))} className="h-10" disabled={submitting} />
                 {loadingDokumen ? (
                   <p className="text-[11px] text-gray-400">Memuat dokumen saat ini...</p>
                 ) : existingDokumen.KTP?.fileUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => setPreviewDokumen(existingDokumen.KTP)}
-                    className="inline-flex items-center gap-1.5 text-[11px] text-blue-700 hover:text-blue-800 font-medium"
-                  >
+                  <button type="button" onClick={() => setPreviewDokumen(existingDokumen.KTP)} className="inline-flex items-center gap-1.5 text-[11px] text-blue-700 hover:text-blue-800 font-medium">
                     Dokumen saat ini: Lihat KTP
                     <ExternalLink className="w-3.5 h-3.5" />
                   </button>
@@ -1059,21 +1047,11 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
               </div>
               <div className="space-y-1.5">
                 <Label>Ganti Dokumen KK</Label>
-                <Input
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) => setEditFiles((p) => ({ ...p, kk: e.target.files?.[0] ?? null }))}
-                  className="h-10"
-                  disabled={submitting}
-                />
+                <Input type="file" accept="image/*,.pdf" onChange={(e) => setEditFiles((p) => ({ ...p, kk: e.target.files?.[0] ?? null }))} className="h-10" disabled={submitting} />
                 {loadingDokumen ? (
                   <p className="text-[11px] text-gray-400">Memuat dokumen saat ini...</p>
                 ) : existingDokumen.KK?.fileUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => setPreviewDokumen(existingDokumen.KK)}
-                    className="inline-flex items-center gap-1.5 text-[11px] text-blue-700 hover:text-blue-800 font-medium"
-                  >
+                  <button type="button" onClick={() => setPreviewDokumen(existingDokumen.KK)} className="inline-flex items-center gap-1.5 text-[11px] text-blue-700 hover:text-blue-800 font-medium">
                     Dokumen saat ini: Lihat KK
                     <ExternalLink className="w-3.5 h-3.5" />
                   </button>
@@ -1084,21 +1062,11 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Ganti Slip Gaji</Label>
-                <Input
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) => setEditFiles((p) => ({ ...p, slipGaji: e.target.files?.[0] ?? null }))}
-                  className="h-10"
-                  disabled={submitting}
-                />
+                <Input type="file" accept="image/*,.pdf" onChange={(e) => setEditFiles((p) => ({ ...p, slipGaji: e.target.files?.[0] ?? null }))} className="h-10" disabled={submitting} />
                 {loadingDokumen ? (
                   <p className="text-[11px] text-gray-400">Memuat dokumen saat ini...</p>
                 ) : existingDokumen.SLIP_GAJI?.fileUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => setPreviewDokumen(existingDokumen.SLIP_GAJI)}
-                    className="inline-flex items-center gap-1.5 text-[11px] text-blue-700 hover:text-blue-800 font-medium"
-                  >
+                  <button type="button" onClick={() => setPreviewDokumen(existingDokumen.SLIP_GAJI)} className="inline-flex items-center gap-1.5 text-[11px] text-blue-700 hover:text-blue-800 font-medium">
                     Dokumen saat ini: Lihat Slip Gaji
                     <ExternalLink className="w-3.5 h-3.5" />
                   </button>
@@ -1121,9 +1089,7 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
                   disabled={submitting}
                   className={`relative inline-flex h-8 w-14 rounded-full transition-colors ${form.status === 'AKTIF' ? 'bg-green-500' : 'bg-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  <span
-                    className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${form.status === 'AKTIF' ? 'translate-x-7' : 'translate-x-1'} mt-1`}
-                  />
+                  <span className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${form.status === 'AKTIF' ? 'translate-x-7' : 'translate-x-1'} mt-1`} />
                 </button>
               </div>
             </div>
@@ -1143,37 +1109,22 @@ function EditAnggotaModal({ member, open, onClose, onUpdated }) {
           {apiError && <p className="text-sm text-red-500">{apiError}</p>}
 
           <div className="pt-1 flex gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={submitting}
-              className="flex-1 h-10"
-            >
-              Batal
-            </Button>
-            <Button
-              type="submit"
-              disabled={submitting}
-              className="flex-1 h-10 bg-[#0A2472] hover:bg-[#081d5e]"
-            >
+            <Button type="button" variant="outline" onClick={onClose} disabled={submitting} className="flex-1 h-10">Batal</Button>
+            <Button type="submit" disabled={submitting} className="flex-1 h-10 bg-[#0A2472] hover:bg-[#081d5e]">
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {submitting ? 'Menyimpan...' : 'Simpan Perubahan'}
             </Button>
           </div>
         </form>
       </div>
-      <DokumenPreviewModal
-        open={!!previewDokumen}
-        onClose={() => setPreviewDokumen(null)}
-        dokumen={previewDokumen}
-      />
+      <DokumenPreviewModal open={!!previewDokumen} onClose={() => setPreviewDokumen(null)} dokumen={previewDokumen} />
     </div>,
     document.body
   )
 }
 
-function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
+// --- VerifikasiAnggotaModal ---
+function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified, onError }) {
   const { authFetch } = useAuth()
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -1206,17 +1157,25 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
     try {
       const res = await authFetch(`/api/nasabah/${memberId}`)
       const json = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(json?.message || 'Gagal mengambil detail anggota')
+
+      if (res.status === 403) {
+        const msg = parseErrorMessage(json, 'Anda tidak memiliki izin untuk melihat data verifikasi anggota.')
+        onError?.(msg)
+        onClose()
+        return
+      }
+
+      if (!res.ok) throw new Error(parseErrorMessage(json, 'Gagal mengambil detail anggota.'))
       setDetail(json?.data ?? null)
       setCatatan(json?.data?.catatan ?? '')
     } catch (err) {
-      setError(err.message || 'Terjadi kesalahan saat mengambil detail anggota')
+      setError(err.message || 'Terjadi kesalahan saat mengambil detail anggota.')
       setDetail(null)
       setCatatan('')
     } finally {
       setLoading(false)
     }
-  }, [authFetch, memberId])
+  }, [authFetch, memberId, onError, onClose])
 
   useEffect(() => {
     if (!open) return
@@ -1244,20 +1203,25 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
       const res = await authFetch(`/api/nasabah/${detail.id}/verifikasi`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status,
-          catatan: catatan.trim(),
-        }),
+        body: JSON.stringify({ status, catatan: catatan.trim() }),
       })
       const json = await res.json().catch(() => null)
+
+      if (res.status === 403) {
+        const msg = parseErrorMessage(json, 'Anda tidak memiliki izin untuk melakukan verifikasi anggota.')
+        onError?.(msg)
+        onClose()
+        return
+      }
+
       if (!res.ok) {
-        throw new Error(json?.message || (action === 'approve' ? 'Gagal menyetujui anggota' : 'Gagal menolak anggota'))
+        throw new Error(parseErrorMessage(json, action === 'approve' ? 'Gagal menyetujui anggota.' : 'Gagal menolak anggota.'))
       }
 
       onVerified?.(action)
       onClose()
     } catch (err) {
-      setError(err.message || 'Gagal memproses verifikasi anggota')
+      setError(err.message || 'Gagal memproses verifikasi anggota.')
     } finally {
       setSubmittingAction('')
     }
@@ -1281,9 +1245,7 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div>
-            <h2 className="text-base sm:text-lg font-bold text-gray-900">Verifikasi Anggota</h2>
-          </div>
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">Verifikasi Anggota</h2>
           <button onClick={onClose} disabled={isSubmitting} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50">
             <X className="w-5 h-5" />
           </button>
@@ -1323,60 +1285,24 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
                 <div className="rounded-xl border border-gray-100 p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-gray-900">Data Pribadi</h4>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">ID Anggota</span>
-                      <span className="text-gray-900 text-right font-medium break-all">{anggotaId}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">NIK</span>
-                      <span className="text-gray-900 text-right font-medium">{detail.nik || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">No. HP</span>
-                      <span className="text-gray-900 text-right font-medium">{detail.noHp || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Tanggal Lahir</span>
-                      <span className="text-gray-900 text-right font-medium">{formatDate(detail.tanggalLahir)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Tanggal Daftar</span>
-                      <span className="text-gray-900 text-right font-medium">{formatDate(detail.tanggalDaftar, true)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Penghasilan Bulanan</span>
-                      <span className="text-gray-900 text-right font-medium">{formatCurrency(detail.penghasilanBulanan)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Pekerjaan</span>
-                      <span className="text-gray-900 text-right font-medium">{detail.pekerjaan || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Instansi</span>
-                      <span className="text-gray-900 text-right font-medium">{detail.instansi || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Alamat</span>
-                      <span className="text-gray-900 text-right font-medium">{detail.alamat || '-'}</span>
-                    </div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">ID Anggota</span><span className="text-gray-900 text-right font-medium break-all">{anggotaId}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">NIK</span><span className="text-gray-900 text-right font-medium">{detail.nik || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">No. HP</span><span className="text-gray-900 text-right font-medium">{detail.noHp || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Tanggal Lahir</span><span className="text-gray-900 text-right font-medium">{formatDate(detail.tanggalLahir)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Tanggal Daftar</span><span className="text-gray-900 text-right font-medium">{formatDate(detail.tanggalDaftar, true)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Penghasilan Bulanan</span><span className="text-gray-900 text-right font-medium">{formatCurrency(detail.penghasilanBulanan)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Pekerjaan</span><span className="text-gray-900 text-right font-medium">{detail.pekerjaan || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Instansi</span><span className="text-gray-900 text-right font-medium">{detail.instansi || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Alamat</span><span className="text-gray-900 text-right font-medium">{detail.alamat || '-'}</span></div>
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-gray-100 p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-gray-900">Data Penanggung Jawab</h4>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Petugas Penanggung Jawab</span>
-                      <span className="text-gray-900 text-right">{detail.pegawai?.nama || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Jabatan Petugas</span>
-                      <span className="text-gray-900 text-right">{detail.pegawai?.jabatan || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Terakhir Diperbarui</span>
-                      <span className="text-gray-900 text-right">{formatDate(detail.updatedAt, true)}</span>
-                    </div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Petugas Penanggung Jawab</span><span className="text-gray-900 text-right">{detail.pegawai?.nama || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Jabatan Petugas</span><span className="text-gray-900 text-right">{detail.pegawai?.jabatan || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Terakhir Diperbarui</span><span className="text-gray-900 text-right">{formatDate(detail.updatedAt, true)}</span></div>
                   </div>
                 </div>
               </div>
@@ -1390,17 +1316,12 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
                     {dokumenList.map((dok) => (
                       <div key={dok.id} className="rounded-lg border border-gray-100 px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900">{dok.jenisDokumen || 'Dokumen'}</p>
+                          <p className="text-sm font-medium text-gray-900">{displayJenisDokumen(dok.jenisDokumen) || 'Dokumen'}</p>
                           <p className="text-xs text-gray-500">Diunggah: {formatDate(dok.uploadedAt, true)}</p>
                         </div>
                         {dok.fileUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewDokumen(dok)}
-                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800"
-                          >
-                            Lihat Dokumen
-                            <ExternalLink className="w-3.5 h-3.5" />
+                          <button type="button" onClick={() => setPreviewDokumen(dok)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800">
+                            Lihat Dokumen <ExternalLink className="w-3.5 h-3.5" />
                           </button>
                         ) : (
                           <span className="text-xs text-gray-400">URL dokumen tidak tersedia</span>
@@ -1411,13 +1332,7 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
                 )}
               </div>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  handleVerifyMember('approve')
-                }}
-                className="space-y-4"
-              >
+              <form onSubmit={(e) => { e.preventDefault(); handleVerifyMember('approve') }} className="space-y-4">
                 <div className="rounded-xl border border-gray-100 p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-gray-900">Catatan Verifikasi</h4>
                   <div className="space-y-2">
@@ -1439,30 +1354,15 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
                   </div>
                 )}
 
+                {error && <p className="text-sm text-red-500">{error}</p>}
+
                 <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={onClose}
-                    disabled={isSubmitting}
-                    className="flex-1 h-10"
-                  >
-                    Batal
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => handleVerifyMember('reject')}
-                    disabled={isSubmitting || !canVerify}
-                    className="flex-1 h-10 bg-red-600 hover:bg-red-700 text-white"
-                  >
+                  <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting} className="flex-1 h-10">Batal</Button>
+                  <Button type="button" onClick={() => handleVerifyMember('reject')} disabled={isSubmitting || !canVerify} className="flex-1 h-10 bg-red-600 hover:bg-red-700 text-white">
                     {submittingAction === 'reject' && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                     {submittingAction === 'reject' ? 'Menolak...' : 'Tolak'}
                   </Button>
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting || !canVerify}
-                    className="flex-1 h-10 bg-green-600 hover:bg-green-700 text-white"
-                  >
+                  <Button type="submit" disabled={isSubmitting || !canVerify} className="flex-1 h-10 bg-green-600 hover:bg-green-700 text-white">
                     {submittingAction === 'approve' && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                     {submittingAction === 'approve' ? 'Menyetujui...' : 'Setujui'}
                   </Button>
@@ -1472,11 +1372,7 @@ function VerifikasiAnggotaModal({ memberId, open, onClose, onVerified }) {
           )}
         </div>
       </div>
-      <DokumenPreviewModal
-        open={!!previewDokumen}
-        onClose={() => setPreviewDokumen(null)}
-        dokumen={previewDokumen}
-      />
+      <DokumenPreviewModal open={!!previewDokumen} onClose={() => setPreviewDokumen(null)} dokumen={previewDokumen} />
     </div>,
     document.body
   )
@@ -1492,7 +1388,6 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
   const [memberLoans, setMemberLoans] = useState([])
   const [financeLoading, setFinanceLoading] = useState(false)
   const [financeError, setFinanceError] = useState('')
-  const [financeLoaded, setFinanceLoaded] = useState(false)
 
   const formatDate = (value, withTime = false) => {
     if (!value) return '-'
@@ -1512,11 +1407,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
   }
 
   const fetchMemberFinanceData = useCallback(async (nasabahId) => {
-    if (!nasabahId) {
-      setMemberSavings([])
-      setMemberLoans([])
-      return
-    }
+    if (!nasabahId) { setMemberSavings([]); setMemberLoans([]); return }
 
     setFinanceLoading(true)
     setFinanceError('')
@@ -1524,7 +1415,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
     try {
       const simpananRes = await authFetch(`/api/simpanan/nasabah/${nasabahId}`)
       const simpananJson = await simpananRes.json().catch(() => null)
-      if (!simpananRes.ok) throw new Error(simpananJson?.message || 'Gagal mengambil data simpanan anggota')
+      if (!simpananRes.ok) throw new Error(parseErrorMessage(simpananJson, 'Gagal mengambil data simpanan anggota.'))
 
       const simpananRows = toArray(simpananJson?.data ?? simpananJson)
       const simpananTarget = { SUKARELA: 0, WAJIB: 0, POKOK: 0 }
@@ -1549,18 +1440,14 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
 
       while (guard < 200) {
         const params = new URLSearchParams()
-        if (cursor !== null && cursor !== undefined && cursor !== '') {
-          params.set('cursor', String(cursor))
-        }
+        if (cursor !== null && cursor !== undefined && cursor !== '') params.set('cursor', String(cursor))
 
         const query = params.toString()
-        const endpoint = query
-          ? `/api/pinjaman/nasabah/${nasabahId}?${query}`
-          : `/api/pinjaman/nasabah/${nasabahId}`
+        const endpoint = query ? `/api/pinjaman/nasabah/${nasabahId}?${query}` : `/api/pinjaman/nasabah/${nasabahId}`
 
         const loanRes = await authFetch(endpoint)
         const loanJson = await loanRes.json().catch(() => null)
-        if (!loanRes.ok) throw new Error(loanJson?.message || 'Gagal mengambil data pinjaman anggota')
+        if (!loanRes.ok) throw new Error(parseErrorMessage(loanJson, 'Gagal mengambil data pinjaman anggota.'))
 
         const rows = toArray(loanJson?.data ?? loanJson)
         collectedLoans.push(...rows)
@@ -1568,12 +1455,8 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
         const pg = loanJson?.pagination ?? {}
         const hasNext = Boolean(pg?.hasNext ?? pg?.has_next)
         const nextCursor = pg?.nextCursor ?? pg?.next_cursor
-        if (!hasNext || nextCursor === null || nextCursor === undefined || nextCursor === '') {
-          break
-        }
-        if (visitedCursor.has(String(nextCursor))) {
-          break
-        }
+        if (!hasNext || nextCursor === null || nextCursor === undefined || nextCursor === '') break
+        if (visitedCursor.has(String(nextCursor))) break
 
         visitedCursor.add(String(nextCursor))
         cursor = nextCursor
@@ -1584,12 +1467,10 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
         .sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))
 
       setMemberLoans(filteredLoans)
-      setFinanceLoaded(true)
     } catch (err) {
-      setFinanceError(err.message || 'Terjadi kesalahan saat mengambil data simpanan dan pinjaman anggota')
+      setFinanceError(err.message || 'Terjadi kesalahan saat mengambil data simpanan dan pinjaman anggota.')
       setMemberSavings([])
       setMemberLoans([])
-      setFinanceLoaded(false)
     } finally {
       setFinanceLoading(false)
     }
@@ -1602,12 +1483,11 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
     try {
       const res = await authFetch(`/api/nasabah/${memberId}`)
       const json = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(json?.message || 'Gagal mengambil detail anggota')
+      if (!res.ok) throw new Error(parseErrorMessage(json, 'Gagal mengambil detail anggota.'))
       setDetail(json?.data ?? null)
-      // Automatically load finance data when opening detail modal.
       await fetchMemberFinanceData(memberId)
     } catch (err) {
-      setError(err.message || 'Terjadi kesalahan saat mengambil detail anggota')
+      setError(err.message || 'Terjadi kesalahan saat mengambil detail anggota.')
       setDetail(null)
       setMemberSavings([])
       setMemberLoans([])
@@ -1631,7 +1511,6 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
       setMemberLoans([])
       setFinanceError('')
       setFinanceLoading(false)
-      setFinanceLoaded(false)
     }
   }, [open])
 
@@ -1640,6 +1519,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
   const statusConfig = getStatus(String(detail?.status ?? 'PENDING').toUpperCase())
   const anggotaId = detail?.id ?? detail?.nasabahId ?? detail?.nasabah_id ?? '-'
   const dokumenList = sortDokumenByPriority(Array.isArray(detail?.dokumen) ? detail.dokumen : [])
+
   return createPortal(
     <div
       className="fixed inset-0 z-[9998] bg-black/50 flex items-end sm:items-center justify-center sm:p-4"
@@ -1650,9 +1530,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div>
-            <h2 className="text-base sm:text-lg font-bold text-gray-900">Detail Anggota</h2>
-          </div>
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">Detail Anggota</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
             <X className="w-5 h-5" />
           </button>
@@ -1667,9 +1545,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
           ) : error ? (
             <div className="py-8 space-y-3">
               <p className="text-sm text-red-500">{error}</p>
-              <Button type="button" variant="outline" onClick={fetchDetail} className="h-9">
-                Coba Lagi
-              </Button>
+              <Button type="button" variant="outline" onClick={fetchDetail} className="h-9">Coba Lagi</Button>
             </div>
           ) : !detail ? (
             <div className="py-8 text-sm text-gray-500">Data anggota tidak tersedia.</div>
@@ -1692,60 +1568,24 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
                 <div className="rounded-xl border border-gray-100 p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-gray-900">Data Pribadi</h4>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">ID Anggota</span>
-                      <span className="text-gray-900 text-right break-all">{anggotaId}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">NIK</span>
-                      <span className="text-gray-900 text-right">{detail.nik || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">No. HP</span>
-                      <span className="text-gray-900 text-right">{detail.noHp || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Tanggal Lahir</span>
-                      <span className="text-gray-900 text-right">{formatDate(detail.tanggalLahir)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Tanggal Daftar</span>
-                      <span className="text-gray-900 text-right">{formatDate(detail.tanggalDaftar, true)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Penghasilan Bulanan</span>
-                      <span className="text-gray-900 text-right">{formatCurrency(detail.penghasilanBulanan)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Pekerjaan</span>
-                      <span className="text-gray-900 text-right">{detail.pekerjaan || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Instansi</span>
-                      <span className="text-gray-900 text-right">{detail.instansi || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Alamat</span>
-                      <span className="text-gray-900 text-right break-words">{detail.alamat || '-'}</span>
-                    </div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">ID Anggota</span><span className="text-gray-900 text-right break-all">{anggotaId}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">NIK</span><span className="text-gray-900 text-right">{detail.nik || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">No. HP</span><span className="text-gray-900 text-right">{detail.noHp || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Tanggal Lahir</span><span className="text-gray-900 text-right">{formatDate(detail.tanggalLahir)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Tanggal Daftar</span><span className="text-gray-900 text-right">{formatDate(detail.tanggalDaftar, true)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Penghasilan Bulanan</span><span className="text-gray-900 text-right">{formatCurrency(detail.penghasilanBulanan)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Pekerjaan</span><span className="text-gray-900 text-right">{detail.pekerjaan || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Instansi</span><span className="text-gray-900 text-right">{detail.instansi || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Alamat</span><span className="text-gray-900 text-right break-words">{detail.alamat || '-'}</span></div>
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-gray-100 p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-gray-900">Data Penanggung Jawab</h4>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Petugas Penanggung Jawab</span>
-                      <span className="text-gray-900 text-right">{detail.pegawai?.nama || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Jabatan Petugas</span>
-                      <span className="text-gray-900 text-right">{detail.pegawai?.jabatan || '-'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Terakhir Diperbarui</span>
-                      <span className="text-gray-900 text-right">{formatDate(detail.updatedAt, true)}</span>
-                    </div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Petugas Penanggung Jawab</span><span className="text-gray-900 text-right">{detail.pegawai?.nama || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Jabatan Petugas</span><span className="text-gray-900 text-right">{detail.pegawai?.jabatan || '-'}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-gray-500">Terakhir Diperbarui</span><span className="text-gray-900 text-right">{formatDate(detail.updatedAt, true)}</span></div>
                   </div>
                 </div>
               </div>
@@ -1764,17 +1604,12 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
                     {dokumenList.map((dok) => (
                       <div key={dok.id} className="rounded-lg border border-gray-100 px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-900">{dok.jenisDokumen || 'Dokumen'}</p>
+                          <p className="text-sm font-medium text-gray-900">{displayJenisDokumen(dok.jenisDokumen) || 'Dokumen'}</p>
                           <p className="text-xs text-gray-500">Diunggah: {formatDate(dok.uploadedAt, true)}</p>
                         </div>
                         {dok.fileUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewDokumen(dok)}
-                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800"
-                          >
-                            Lihat Dokumen
-                            <ExternalLink className="w-3.5 h-3.5" />
+                          <button type="button" onClick={() => setPreviewDokumen(dok)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-800">
+                            Lihat Dokumen <ExternalLink className="w-3.5 h-3.5" />
                           </button>
                         ) : (
                           <span className="text-xs text-gray-400">URL dokumen tidak tersedia</span>
@@ -1787,16 +1622,13 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
 
               <div className="rounded-xl border border-gray-100 p-4 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900">Data Simpanan dan Pinjaman</h4>
-
                 {financeLoading ? (
                   <div className="py-6 flex items-center justify-center gap-2 text-gray-400 text-sm">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Memuat data simpanan dan pinjaman...</span>
                   </div>
                 ) : financeError ? (
-                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                    {financeError}
-                  </div>
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{financeError}</div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="rounded-lg border border-gray-100 p-3 space-y-3">
@@ -1818,7 +1650,6 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
                           {memberLoans.length} pinjaman
                         </span>
                       </div>
-
                       {memberLoans.length === 0 ? (
                         <p className="text-xs text-gray-500">Belum ada data pinjaman.</p>
                       ) : (
@@ -1840,11 +1671,7 @@ function DetailAnggotaModal({ memberId, open, onClose }) {
             </>
           )}
         </div>
-        <DokumenPreviewModal
-          open={!!previewDokumen}
-          onClose={() => setPreviewDokumen(null)}
-          dokumen={previewDokumen}
-        />
+        <DokumenPreviewModal open={!!previewDokumen} onClose={() => setPreviewDokumen(null)} dokumen={previewDokumen} />
       </div>
     </div>,
     document.body
@@ -1885,10 +1712,8 @@ export default function Keanggotaan() {
     try {
       const res = await authFetch('/api/nasabah')
       const json = await res.json()
-      if (!res.ok) throw new Error(json.message || 'Gagal mengambil data anggota')
+      if (!res.ok) throw new Error('Gagal mengambil data anggota.')
       const baseMembers = (json.data ?? []).map(normalizeMember)
-      // Do not fetch per-member detail here to avoid heavy request burst.
-      // Detailed data is fetched on-demand when opening modals (detail/edit/verify).
       setMembers(baseMembers)
     } catch (err) {
       setError(err.message)
@@ -1917,23 +1742,14 @@ export default function Keanggotaan() {
   const visiblePage = Math.min(pageIndex, totalPages)
   const paginatedMembers = filtered.slice((visiblePage - 1) * PAGE_LIMIT, visiblePage * PAGE_LIMIT)
 
-  useEffect(() => {
-    setPageIndex(1)
-  }, [search, statusFilter])
+  useEffect(() => { setPageIndex(1) }, [search, statusFilter])
 
   useEffect(() => {
-    if (pageIndex > totalPages) {
-      setPageIndex(totalPages)
-    }
+    if (pageIndex > totalPages) setPageIndex(totalPages)
   }, [pageIndex, totalPages])
 
-  const goToNextPage = useCallback(() => {
-    setPageIndex((prev) => Math.min(totalPages, prev + 1))
-  }, [totalPages])
-
-  const goToPrevPage = useCallback(() => {
-    setPageIndex((prev) => Math.max(1, prev - 1))
-  }, [])
+  const goToNextPage = useCallback(() => setPageIndex((prev) => Math.min(totalPages, prev + 1)), [totalPages])
+  const goToPrevPage = useCallback(() => setPageIndex((prev) => Math.max(1, prev - 1)), [])
 
   const total    = members.length
   const aktif    = members.filter((m) => m.status === 'AKTIF').length
@@ -1941,38 +1757,30 @@ export default function Keanggotaan() {
   const ditolak  = members.filter((m) => m.status === 'DITOLAK').length
   const nonaktif = members.filter((m) => m.status === 'NONAKTIF').length
 
-  const handleEdit = (member) => {
-    setMemberToEdit(member)
-  }
+  const handleEdit = (member) => setMemberToEdit(member)
+  const handleDetail = (member) => setDetailMemberId(member?.id ?? null)
+  const handleVerify = (member) => setVerifyMemberId(member?.id ?? null)
 
   const handleEditUpdated = () => {
-    toast.success('Data anggota berhasil diperbarui')
+    toast.success('Data anggota berhasil diperbarui.')
     fetchNasabah()
   }
 
-  const handleDetail = (member) => {
-    setDetailMemberId(member?.id ?? null)
-  }
-
-  const handleVerify = (member) => {
-    setVerifyMemberId(member?.id ?? null)
-  }
-
   const handleVerified = (action) => {
-    if (action === 'approve') {
-      toast.success('Anggota berhasil disetujui')
-    } else if (action === 'reject') {
-      toast.success('Anggota berhasil ditolak')
-    } else {
-      toast.success('Status verifikasi anggota berhasil diperbarui')
-    }
+    if (action === 'approve') toast.success('Anggota berhasil disetujui.')
+    else if (action === 'reject') toast.success('Anggota berhasil ditolak.')
+    else toast.success('Status verifikasi anggota berhasil diperbarui.')
     fetchNasabah()
   }
 
   const handleAdded = () => {
-    toast.success('Anggota berhasil ditambahkan')
+    toast.success('Anggota berhasil ditambahkan.')
     fetchNasabah()
   }
+
+  const handleModalError = useCallback((msg) => {
+    toast.error(msg)
+  }, [toast])
 
   const filterOptions = [
     { value: 'SEMUA',    label: 'Semua',      count: total,    activeClass: 'bg-blue-100 text-blue-700',     countClass: 'bg-blue-200 text-blue-800' },
@@ -1989,6 +1797,7 @@ export default function Keanggotaan() {
         open={tambahModalOpen}
         onClose={() => setTambahModalOpen(false)}
         onAdded={handleAdded}
+        onError={handleModalError}
       />
       <DetailAnggotaModal
         memberId={detailMemberId}
@@ -2000,12 +1809,14 @@ export default function Keanggotaan() {
         open={!!verifyMemberId}
         onClose={() => setVerifyMemberId(null)}
         onVerified={handleVerified}
+        onError={handleModalError}
       />
       <EditAnggotaModal
         member={memberToEdit}
         open={!!memberToEdit}
         onClose={() => setMemberToEdit(null)}
         onUpdated={handleEditUpdated}
+        onError={handleModalError}
       />
 
       {/* Page Header */}
@@ -2023,11 +1834,11 @@ export default function Keanggotaan() {
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-        <StatCard icon={Users}     iconBg="bg-blue-50"   label="Total Anggota" value={loading ? '...' : `${total} Orang`}    valueColor="text-[#0066FF]" />
-        <StatCard icon={UserCheck} iconBg="bg-green-50"  label="Aktif"         value={loading ? '...' : `${aktif} Orang`}    valueColor="text-green-600" />
-        <StatCard icon={UserMinus} iconBg="bg-yellow-50" label="Pending"       value={loading ? '...' : `${pending} Orang`}  valueColor="text-yellow-600" />
-        <StatCard icon={AlertCircle} iconBg="bg-orange-50" label="Ditolak"     value={loading ? '...' : `${ditolak} Orang`}  valueColor="text-orange-600" />
-        <StatCard icon={UserX}     iconBg="bg-red-50"    label="Tidak Aktif"   value={loading ? '...' : `${nonaktif} Orang`} valueColor="text-red-500" />
+        <StatCard icon={Users}       iconBg="bg-blue-50"   label="Total Anggota" value={loading ? '...' : `${total} Orang`}    valueColor="text-[#0066FF]" />
+        <StatCard icon={UserCheck}   iconBg="bg-green-50"  label="Aktif"         value={loading ? '...' : `${aktif} Orang`}    valueColor="text-green-600" />
+        <StatCard icon={UserMinus}   iconBg="bg-yellow-50" label="Pending"       value={loading ? '...' : `${pending} Orang`}  valueColor="text-yellow-600" />
+        <StatCard icon={AlertCircle} iconBg="bg-orange-50" label="Ditolak"       value={loading ? '...' : `${ditolak} Orang`}  valueColor="text-orange-600" />
+        <StatCard icon={UserX}       iconBg="bg-red-50"    label="Tidak Aktif"   value={loading ? '...' : `${nonaktif} Orang`} valueColor="text-red-500" />
       </div>
 
       {/* Toolbar */}
@@ -2074,9 +1885,7 @@ export default function Keanggotaan() {
         ) : error ? (
           <div className="py-16 text-center text-red-400 text-sm">{error}</div>
         ) : filtered.length === 0 ? (
-          <div className="py-16 text-center text-gray-400 text-sm">
-            Tidak ada anggota ditemukan.
-          </div>
+          <div className="py-16 text-center text-gray-400 text-sm">Tidak ada anggota ditemukan.</div>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2096,22 +1905,10 @@ export default function Keanggotaan() {
                 Halaman <span className="font-semibold text-gray-700">{visiblePage}</span>
               </p>
               <div className="flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-8 px-3 text-xs"
-                  onClick={goToPrevPage}
-                  disabled={loading || visiblePage <= 1}
-                >
+                <Button type="button" variant="outline" className="h-8 px-3 text-xs" onClick={goToPrevPage} disabled={loading || visiblePage <= 1}>
                   Sebelumnya
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-8 px-3 text-xs"
-                  onClick={goToNextPage}
-                  disabled={loading || visiblePage >= totalPages}
-                >
+                <Button type="button" variant="outline" className="h-8 px-3 text-xs" onClick={goToNextPage} disabled={loading || visiblePage >= totalPages}>
                   Berikutnya
                 </Button>
               </div>

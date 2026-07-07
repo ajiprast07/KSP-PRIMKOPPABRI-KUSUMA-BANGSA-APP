@@ -17,7 +17,22 @@ function normalizeToken(value) {
   return String(value || '').trim().toLowerCase()
 }
 
-function canAccessMenu(menuId, permissions = []) {
+function normalizeRole(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
+}
+
+function isRestrictedUserRole(roles = []) {
+  const normalizedRoles = (Array.isArray(roles) ? roles : [roles])
+    .map(normalizeRole)
+    .filter(Boolean)
+
+  return normalizedRoles.some((role) => role === 'kasir' || role === 'staff')
+}
+
+function canAccessMenu(menuId, permissions = [], roles = []) {
   const rules = {
     beranda: ['dashboard.read'],
     transaksi: ['transaksi.read', 'transaksi.process', 'simpanan.setor', 'simpanan.tarik', 'pinjaman.ajukan', 'pinjaman.angsuran', 'pinjaman.cairkan'],
@@ -30,6 +45,7 @@ function canAccessMenu(menuId, permissions = []) {
 
   const permissionSet = new Set((Array.isArray(permissions) ? permissions : []).map(normalizeToken))
   if (permissionSet.size === 0) return false
+  if (menuId === 'pengguna' && isRestrictedUserRole(roles)) return false
 
   const menuRules = rules[menuId] || []
   return menuRules.some((item) => permissionSet.has(normalizeToken(item)))
@@ -46,14 +62,14 @@ const menuItems = [
 ]
 
 export default function Sidebar({ activePage = 'beranda', onNavigate, isOpen = false, onClose, onLogout }) {
-  const { user, permissions } = useAuth()
+  const { user, roles, permissions } = useAuth()
   const displayName = user?.username ?? 'Pegawai'
   const displayRole = user?.roles?.[0] ?? '-'
   const [showLogoutModal, setShowLogoutModal] = useState(false)
 
   const visibleMenuItems = useMemo(
-    () => menuItems.filter((item) => canAccessMenu(item.id, permissions)),
-    [permissions]
+    () => menuItems.filter((item) => canAccessMenu(item.id, permissions, roles)),
+    [permissions, roles]
   )
 
   const handleNavigate = (id) => {
