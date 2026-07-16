@@ -211,6 +211,9 @@ function StatCard({ title, value, subtitle, valueColor = 'text-[#0066FF]' }) {
   )
 }
 
+// Interval polling dalam milidetik (5 detik)
+const POLLING_INTERVAL = 5000
+
 export default function Dashboard() {
   const { authFetch } = useAuth()
   const [isMobile, setIsMobile] = useState(() => {
@@ -220,15 +223,18 @@ export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState(null)
   const [profileData, setProfileData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false) // polling silent — tidak reset UI
   const [error, setError] = useState('')
 
   const namaUser =
     pickFirst(profileData, ['nama']) ??
     '-'
 
-  const fetchDashboard = useCallback(async () => {
-    setLoading(true)
-    setError('')
+  // silent=true → polling (tidak tampilkan loading spinner & tidak reset error)
+  const fetchDashboard = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    else setIsFetching(true)
+    if (!silent) setError('')
     try {
       const res = await authFetch('/api/dashboard')
       const json = await res.json()
@@ -239,9 +245,11 @@ export default function Dashboard() {
       const normalizedDashboard = json?.data ?? json?.result ?? json ?? null
       setDashboardData(normalizedDashboard)
     } catch (err) {
-      setError(err.message)
+      // Hanya tampilkan error saat initial load, bukan saat polling
+      if (!silent) setError(err.message)
     } finally {
       setLoading(false)
+      setIsFetching(false)
     }
   }, [authFetch])
 
@@ -259,8 +267,28 @@ export default function Dashboard() {
   }, [authFetch])
 
   useEffect(() => {
+    // Initial load — tampilkan loading spinner
     fetchDashboard()
     fetchProfile()
+
+    // Polling setiap 30 detik (silent, tidak ganggu UI)
+    const interval = setInterval(() => {
+      fetchDashboard(true)
+    }, POLLING_INTERVAL)
+
+    // Refetch saat user kembali ke tab ini
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboard(true)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // Cleanup saat komponen unmount
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [fetchDashboard, fetchProfile])
 
   useEffect(() => {
@@ -342,7 +370,16 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold text-gray-900">Beranda</h1>
+        {/* Header dengan indikator polling */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-gray-900">Beranda</h1>
+          {isFetching && (
+            <span className="flex items-center gap-1 text-xs text-gray-400">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Memperbarui...
+            </span>
+          )}
+        </div>
         <p className="text-sm text-gray-500">
           Hallo <span className="font-semibold text-gray-700">{namaUser},</span> Selamat beraktivitas hari ini!
         </p>
@@ -539,7 +576,6 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-
         </>
       )}
     </div>

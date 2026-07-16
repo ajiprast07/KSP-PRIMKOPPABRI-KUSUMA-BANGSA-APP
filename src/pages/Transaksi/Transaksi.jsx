@@ -1248,20 +1248,7 @@ function toNasabahOption(item) {
         setInstallmentSubmitting(false)
       }
     })
-  }, [
-    authFetch,
-    installmentPinjamanId,
-    installmentAmount,
-    installmentNasabahId,
-    installmentNasabahOptions,
-    selectedInstallmentLoan?.nasabahName,
-    selectedInstallmentLoan?.sisaPinjaman,
-    installmentMethod,
-    installmentNote,
-    fetchAllTransactions,
-    showConfirmationModal,
-    validateInstallmentFields,
-  ])
+  },)
 
   useEffect(() => {
     if (!isSavingsModalOpen || !savingsNasabahId) {
@@ -1390,19 +1377,7 @@ function toNasabahOption(item) {
         setSavingsSubmitting(false)
       }
     })
-  }, [
-    authFetch,
-    savingsRekeningId,
-    savingsAmount,
-    savingsMethod,
-    savingsNote,
-    fetchAllTransactions,
-    savingsNasabahId,
-    savingsNasabahOptions,
-    selectedSavingsRekening?.jenisSimpanan,
-    showConfirmationModal,
-    validateSavingsFields,
-  ])
+  },)
 
   useEffect(() => {
     if (!isWithdrawalModalOpen || !withdrawalNasabahId) {
@@ -1543,19 +1518,7 @@ function toNasabahOption(item) {
         setWithdrawalSubmitting(false)
       }
     })
-  }, [
-    authFetch,
-    withdrawalRekeningId,
-    selectedWithdrawalNasabah?.isActive,
-    withdrawalAmount,
-    withdrawalMethod,
-    withdrawalNote,
-    fetchAllTransactions,
-    selectedWithdrawalNasabah?.name,
-    selectedWithdrawalRekening?.jenisSimpanan,
-    showConfirmationModal,
-    validateWithdrawalFields,
-  ])
+  },)
 
   // ─────────────────────────────────────────────────────────────────────────
   // Filter modal helpers
